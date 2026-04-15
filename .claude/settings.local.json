@@ -5,7 +5,13 @@
       "Bash(npm show:*)",
       "Bash(npm audit:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(mkdir -p /c/Users/KABUM/OneDrive/Documentos/PROGRAMACAO/Recrutae/Automatic_Email/public)",
+      "Bash(cp /c/Users/KABUM/OneDrive/Documentos/PROGRAMACAO/Recrutae/Automatic_Email/assets/recrutae.webp /c/Users/KABUM/OneDrive/Documentos/PROGRAMACAO/Recrutae/Automatic_Email/public/recrutae.webp)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3000)"
     ]
   }
 }

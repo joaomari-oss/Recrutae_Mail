@@ -3,24 +3,26 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
   {
     variants: {
       variant: {
         default:
-          'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
+          'border-transparent bg-brand-coral/10 text-brand-coral hover:bg-brand-coral/20',
         secondary:
-          'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
+          'border-transparent bg-white/8 text-brand-muted hover:bg-white/12',
         destructive:
-          'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
-        outline: 'text-foreground',
+          'border-brand-error/20 bg-brand-error/10 text-brand-error hover:bg-brand-error/20',
+        outline:
+          'border-white/10 text-brand-muted',
         success:
-          'border-transparent bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30',
+          'border-brand-success/20 bg-brand-success/10 text-brand-success hover:bg-brand-success/20',
         warning:
-          'border-transparent bg-amber-500/20 text-amber-400 hover:bg-amber-500/30',
-        info: 'border-transparent bg-blue-500/20 text-blue-400 hover:bg-blue-500/30',
+          'border-brand-warning/20 bg-brand-warning/10 text-brand-warning hover:bg-brand-warning/20',
+        info:
+          'border-brand-coral/20 bg-brand-coral/10 text-brand-coral hover:bg-brand-coral/20',
         muted:
-          'border-transparent bg-muted text-muted-foreground hover:bg-muted/80',
+          'border-white/10 bg-white/5 text-brand-muted hover:bg-white/8',
       },
     },
     defaultVariants: {

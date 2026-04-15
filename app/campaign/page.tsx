@@ -4,14 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store'
 import { CampaignConfig } from '@/lib/types'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   ArrowLeft,
-  ArrowRight,
   Sparkles,
   Users,
   Briefcase,
@@ -20,54 +14,129 @@ import {
   Linkedin,
   AlertCircle,
   Link,
+  ArrowRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+function FieldError({ msg }: { msg?: string }) {
+  if (!msg) return null
+  return (
+    <p className="flex items-center gap-1.5 text-xs text-brand-error mt-1.5">
+      <AlertCircle className="h-3 w-3 flex-shrink-0" /> {msg}
+    </p>
+  )
+}
+
+function FormCard({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-white/8 bg-brand-charcoal p-6 space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-brand-coral/10 border border-brand-coral/20 flex items-center justify-center flex-shrink-0">
+          {icon}
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-brand-white">{title}</h2>
+          <p className="text-xs text-brand-muted">{description}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Field({
+  id,
+  label,
+  required,
+  optional,
+  icon,
+  error,
+  children,
+  hint,
+}: {
+  id: string
+  label: string
+  required?: boolean
+  optional?: boolean
+  icon?: React.ReactNode
+  error?: string
+  children: React.ReactNode
+  hint?: string
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="block text-sm font-medium text-brand-muted">
+        {label}
+        {required && <span className="text-brand-coral ml-1">*</span>}
+        {optional && <span className="text-brand-muted/50 text-xs ml-1">(opcional)</span>}
+      </label>
+      <div className={cn('relative', icon && 'flex items-center')}>
+        {icon && (
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted/60 pointer-events-none">
+            {icon}
+          </div>
+        )}
+        {children}
+      </div>
+      <FieldError msg={error} />
+      {hint && !error && <p className="text-xs text-brand-muted/60">{hint}</p>}
+    </div>
+  )
+}
+
+const inputCls = (hasError?: boolean, hasIcon?: boolean) =>
+  cn(
+    'w-full px-4 py-3 rounded-lg border text-sm text-brand-white',
+    'bg-brand-dark border-white/10 outline-none transition-colors',
+    'placeholder:text-brand-muted/40 focus:border-brand-coral/50',
+    hasIcon && 'pl-10',
+    hasError && 'border-brand-error/50 focus:border-brand-error/70'
+  )
+
 export default function CampaignPage() {
   const router = useRouter()
-  const {
-    activeCampaignId,
-    candidatesByCampaign,
-    campaignConfigById,
-    setCampaignConfig,
-    updateCampaign,
-  } = useAppStore()
+  const { activeCampaignId, candidatesByCampaign, campaignConfigById, setCampaignConfig, updateCampaign } = useAppStore()
 
   const candidates = activeCampaignId ? candidatesByCampaign[activeCampaignId] ?? [] : []
   const existingConfig = activeCampaignId ? campaignConfigById[activeCampaignId] : undefined
 
   const [form, setForm] = useState<CampaignConfig>({
-    role: existingConfig?.role || '',
-    jobDescription: existingConfig?.jobDescription || '',
-    link: existingConfig?.link || '',
-    hiringCompany: existingConfig?.hiringCompany || '',
-    recruiterName: existingConfig?.recruiterName || '',
-    recruiterCompany: existingConfig?.recruiterCompany || '',
-    recruiterLinkedin: existingConfig?.recruiterLinkedin || '',
-    aiProvider: existingConfig?.aiProvider || 'openai',
+    role:               existingConfig?.role ?? '',
+    jobDescription:     existingConfig?.jobDescription ?? '',
+    link:               existingConfig?.link ?? '',
+    hiringCompany:      existingConfig?.hiringCompany ?? '',
+    recruiterName:      existingConfig?.recruiterName ?? '',
+    recruiterCompany:   existingConfig?.recruiterCompany ?? '',
+    recruiterLinkedin:  existingConfig?.recruiterLinkedin ?? '',
+    aiProvider:         existingConfig?.aiProvider ?? 'openai',
   })
 
   const [errors, setErrors] = useState<Partial<Record<keyof CampaignConfig, string>>>({})
 
   useEffect(() => {
-    if (!activeCampaignId || candidates.length === 0) {
-      router.replace('/')
-    }
+    if (!activeCampaignId || candidates.length === 0) router.replace('/')
   }, [activeCampaignId, candidates.length, router])
 
   const validate = (): boolean => {
-    const newErrors: Partial<Record<keyof CampaignConfig, string>> = {}
-    if (!form.role.trim()) newErrors.role = 'Nome do cargo e obrigatorio.'
-    if (!form.hiringCompany.trim()) newErrors.hiringCompany = 'Nome da empresa contratante e obrigatorio.'
-    if (!form.jobDescription.trim()) {
-      newErrors.jobDescription = 'Descricao da vaga e obrigatoria.'
-    } else if (form.jobDescription.trim().length < 50) {
-      newErrors.jobDescription = 'Forneca mais detalhes sobre a vaga (minimo 50 caracteres).'
-    }
-    if (!form.recruiterName.trim()) newErrors.recruiterName = 'Nome do recrutador e obrigatorio.'
-    if (!form.recruiterCompany.trim()) newErrors.recruiterCompany = 'Empresa do recrutador e obrigatoria.'
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    const e: Partial<Record<keyof CampaignConfig, string>> = {}
+    if (!form.role.trim()) e.role = 'Nome do cargo é obrigatório.'
+    if (!form.hiringCompany.trim()) e.hiringCompany = 'Nome da empresa contratante é obrigatório.'
+    if (!form.jobDescription.trim()) e.jobDescription = 'Descrição da vaga é obrigatória.'
+    else if (form.jobDescription.trim().length < 50) e.jobDescription = 'Forneça mais detalhes (mínimo 50 caracteres).'
+    if (!form.recruiterName.trim()) e.recruiterName = 'Seu nome é obrigatório.'
+    if (!form.recruiterCompany.trim()) e.recruiterCompany = 'Sua empresa é obrigatória.'
+    setErrors(e)
+    return Object.keys(e).length === 0
   }
 
   const handleSubmit = () => {
@@ -85,228 +154,197 @@ export default function CampaignPage() {
   if (!activeCampaignId || candidates.length === 0) return null
 
   return (
-    <main className="min-h-[calc(100vh-3.5rem)] bg-background flex flex-col">
-      {/* Step indicator */}
-      <div className="border-b border-border px-8 py-3">
-        <div className="max-w-2xl mx-auto flex items-center gap-2 text-sm">
-          <div className="flex items-center gap-1.5">
-            <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">1</div>
-            <span className="text-muted-foreground">Upload</span>
+    <div className="min-h-screen bg-brand-dark">
+      {/* Top bar */}
+      <div className="sticky top-0 z-10 bg-brand-dark/95 backdrop-blur border-b border-white/5 px-8 py-4">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Step dots */}
+            {[
+              { n: 1, label: 'Upload', done: true },
+              { n: 2, label: 'Campanha', active: true },
+              { n: 3, label: 'Revisão', done: false },
+              { n: 4, label: 'Envio', done: false },
+            ].map((step, i) => (
+              <div key={step.n} className="flex items-center gap-2">
+                {i > 0 && <div className={cn('h-px w-6', step.done || step.active ? 'bg-brand-coral/40' : 'bg-white/10')} />}
+                <div className="flex items-center gap-1.5">
+                  <div className={cn(
+                    'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold',
+                    step.active
+                      ? 'bg-brand-coral text-white'
+                      : step.done
+                      ? 'bg-brand-coral/20 text-brand-coral'
+                      : 'bg-white/5 text-brand-muted'
+                  )}>
+                    {step.n}
+                  </div>
+                  <span className={cn(
+                    'text-xs',
+                    step.active ? 'text-brand-white font-medium' : 'text-brand-muted'
+                  )}>
+                    {step.label}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="h-px w-8 bg-border" />
-          <div className="flex items-center gap-1.5">
-            <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">2</div>
-            <span className="text-foreground font-medium">Configuracao</span>
-          </div>
-          <div className="h-px w-8 bg-border" />
-          <div className="flex items-center gap-1.5">
-            <div className="w-6 h-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-bold">3</div>
-            <span className="text-muted-foreground">Revisao</span>
-          </div>
-          <div className="h-px w-8 bg-border" />
-          <div className="flex items-center gap-1.5">
-            <div className="w-6 h-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-bold">4</div>
-            <span className="text-muted-foreground">Envio</span>
-          </div>
-          <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-            <Users className="h-4 w-4" />
+          <div className="flex items-center gap-1.5 text-xs text-brand-muted">
+            <Users className="h-3.5 w-3.5" />
             <span>{candidates.length} contatos</span>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center py-8 px-4">
-        <div className="w-full max-w-2xl space-y-6">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold text-foreground">Configure a campanha</h1>
-            <p className="text-muted-foreground">
-              Essas informacoes serao usadas pela IA para personalizar cada email.
-            </p>
-          </div>
+      {/* Content */}
+      <div className="max-w-2xl mx-auto px-6 py-10 space-y-6">
+        <div className="space-y-1 animate-fade-up" style={{ animationFillMode: 'forwards' }}>
+          <h1 className="text-3xl font-display font-bold text-brand-white">
+            Configure a campanha
+          </h1>
+          <p className="text-brand-muted">
+            A IA vai usar essas informações para personalizar cada email.
+          </p>
+        </div>
 
-          {/* Job Description */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Briefcase className="h-4 w-4 text-primary" />
-                Oportunidade / Vaga
-              </CardTitle>
-              <CardDescription>
-                Descreva a vaga com detalhes. Quanto mais informacoes, melhor o email gerado.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="role">
-                  Nome do cargo <span className="text-destructive">*</span>
-                </Label>
-                <div className="relative">
-                  <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="role"
-                    placeholder="Ex: Engenheiro de Software Senior"
-                    value={form.role}
-                    onChange={(e) => update('role', e.target.value)}
-                    className={cn('pl-9', errors.role && 'border-destructive focus-visible:ring-destructive')}
-                  />
-                </div>
-                {errors.role && (
-                  <p className="flex items-center gap-1.5 text-xs text-destructive">
-                    <AlertCircle className="h-3 w-3" /> {errors.role}
-                  </p>
+        {/* Section 1: Job */}
+        <div className="animate-fade-up stagger-1" style={{ animationFillMode: 'forwards' }}>
+          <FormCard
+            icon={<Briefcase className="h-4 w-4 text-brand-coral" />}
+            title="A oportunidade"
+            description="Descreva a vaga. Quanto mais detalhes, melhor o email gerado."
+          >
+            <Field id="role" label="Nome do cargo" required error={errors.role}
+              icon={<Briefcase className="h-4 w-4" />}
+            >
+              <input
+                id="role"
+                type="text"
+                placeholder="Ex: Engenheiro de Software Sênior"
+                value={form.role}
+                onChange={(e) => update('role', e.target.value)}
+                className={inputCls(!!errors.role, true)}
+              />
+            </Field>
+
+            <Field id="hiringCompany" label="Empresa contratante" required error={errors.hiringCompany}
+              icon={<Building2 className="h-4 w-4" />}
+              hint="A empresa que está contratando (aparece no email como a empresa da vaga)."
+            >
+              <input
+                id="hiringCompany"
+                type="text"
+                placeholder="Ex: Nubank, iFood, Banco Inter"
+                value={form.hiringCompany}
+                onChange={(e) => update('hiringCompany', e.target.value)}
+                className={inputCls(!!errors.hiringCompany, true)}
+              />
+            </Field>
+
+            <div className="space-y-1.5">
+              <label htmlFor="jobDescription" className="block text-sm font-medium text-brand-muted">
+                Descrição da vaga <span className="text-brand-coral">*</span>
+              </label>
+              <textarea
+                id="jobDescription"
+                placeholder="Ex: Posição 100% remota, foco em backend com Node.js e TypeScript. Salário até R$20k, benefícios competitivos, squad autônomo…"
+                value={form.jobDescription}
+                onChange={(e) => update('jobDescription', e.target.value)}
+                rows={6}
+                className={cn(
+                  inputCls(!!errors.jobDescription),
+                  'resize-none leading-relaxed'
                 )}
+              />
+              <div className="flex items-center justify-between">
+                <FieldError msg={errors.jobDescription} />
+                <span className="text-xs text-brand-muted/60 font-mono ml-auto">
+                  {form.jobDescription.length} chars
+                </span>
               </div>
+            </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="hiringCompany">
-                  Empresa contratante <span className="text-destructive">*</span>
-                </Label>
-                <div className="relative">
-                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="hiringCompany"
-                    placeholder="Ex: Start Bank, Nubank, iFood"
-                    value={form.hiringCompany}
-                    onChange={(e) => update('hiringCompany', e.target.value)}
-                    className={cn('pl-9', errors.hiringCompany && 'border-destructive focus-visible:ring-destructive')}
-                  />
-                </div>
-                {errors.hiringCompany && (
-                  <p className="flex items-center gap-1.5 text-xs text-destructive">
-                    <AlertCircle className="h-3 w-3" /> {errors.hiringCompany}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Nome da empresa que esta contratando (aparecera no email como a empresa da vaga).
-                </p>
-              </div>
+            <Field id="link" label="Link da vaga" optional icon={<Link className="h-4 w-4" />}>
+              <input
+                id="link"
+                type="text"
+                placeholder="https://linkedin.com/jobs/view/123456"
+                value={form.link}
+                onChange={(e) => update('link', e.target.value)}
+                className={inputCls(false, true)}
+              />
+            </Field>
+          </FormCard>
+        </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="jobDescription">
-                  Descricao da vaga <span className="text-destructive">*</span>
-                </Label>
-                <Textarea
-                  id="jobDescription"
-                  placeholder="Ex: A posicao e 100% remota, com foco em desenvolvimento backend com Node.js e TypeScript..."
-                  value={form.jobDescription}
-                  onChange={(e) => update('jobDescription', e.target.value)}
-                  className={cn(
-                    'min-h-[140px] resize-none',
-                    errors.jobDescription && 'border-destructive focus-visible:ring-destructive'
-                  )}
+        {/* Section 2: Recruiter */}
+        <div className="animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
+          <FormCard
+            icon={<User className="h-4 w-4 text-brand-coral" />}
+            title="Suas informações"
+            description="Dados do recrutador que assina os emails."
+          >
+            <div className="grid grid-cols-2 gap-4">
+              <Field id="recruiterName" label="Seu nome" required error={errors.recruiterName}
+                icon={<User className="h-4 w-4" />}
+              >
+                <input
+                  id="recruiterName"
+                  type="text"
+                  placeholder="Ana Silva"
+                  value={form.recruiterName}
+                  onChange={(e) => update('recruiterName', e.target.value)}
+                  className={inputCls(!!errors.recruiterName, true)}
                 />
-                {errors.jobDescription && (
-                  <p className="flex items-center gap-1.5 text-xs text-destructive">
-                    <AlertCircle className="h-3 w-3" /> {errors.jobDescription}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground text-right">
-                  {form.jobDescription.length} caracteres
-                </p>
-              </div>
+              </Field>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="link">
-                  Link da vaga <span className="text-muted-foreground font-normal">(opcional)</span>
-                </Label>
-                <div className="relative">
-                  <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="link"
-                    placeholder="Ex: https://linkedin.com/jobs/view/123456"
-                    value={form.link}
-                    onChange={(e) => update('link', e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              <Field id="recruiterCompany" label="Sua empresa" required error={errors.recruiterCompany}
+                icon={<Building2 className="h-4 w-4" />}
+              >
+                <input
+                  id="recruiterCompany"
+                  type="text"
+                  placeholder="Recrutaê"
+                  value={form.recruiterCompany}
+                  onChange={(e) => update('recruiterCompany', e.target.value)}
+                  className={inputCls(!!errors.recruiterCompany, true)}
+                />
+              </Field>
+            </div>
 
-          {/* Recruiter Info */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <User className="h-4 w-4 text-primary" />
-                Suas informacoes
-              </CardTitle>
-              <CardDescription>O recrutador que assina os emails.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="recruiterName">
-                    Seu nome <span className="text-destructive">*</span>
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="recruiterName"
-                      placeholder="Ana Silva"
-                      value={form.recruiterName}
-                      onChange={(e) => update('recruiterName', e.target.value)}
-                      className={cn('pl-9', errors.recruiterName && 'border-destructive focus-visible:ring-destructive')}
-                    />
-                  </div>
-                  {errors.recruiterName && (
-                    <p className="flex items-center gap-1.5 text-xs text-destructive">
-                      <AlertCircle className="h-3 w-3" /> {errors.recruiterName}
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="recruiterCompany">
-                    Sua empresa <span className="text-destructive">*</span>
-                  </Label>
-                  <div className="relative">
-                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="recruiterCompany"
-                      placeholder="TechCorp"
-                      value={form.recruiterCompany}
-                      onChange={(e) => update('recruiterCompany', e.target.value)}
-                      className={cn('pl-9', errors.recruiterCompany && 'border-destructive focus-visible:ring-destructive')}
-                    />
-                  </div>
-                  {errors.recruiterCompany && (
-                    <p className="flex items-center gap-1.5 text-xs text-destructive">
-                      <AlertCircle className="h-3 w-3" /> {errors.recruiterCompany}
-                    </p>
-                  )}
-                </div>
-              </div>
+            <Field id="recruiterLinkedin" label="Seu LinkedIn" optional icon={<Linkedin className="h-4 w-4" />}>
+              <input
+                id="recruiterLinkedin"
+                type="text"
+                placeholder="https://linkedin.com/in/anasilva"
+                value={form.recruiterLinkedin}
+                onChange={(e) => update('recruiterLinkedin', e.target.value)}
+                className={inputCls(false, true)}
+              />
+            </Field>
+          </FormCard>
+        </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="recruiterLinkedin">
-                  Seu LinkedIn <span className="text-muted-foreground font-normal">(opcional)</span>
-                </Label>
-                <div className="relative">
-                  <Linkedin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="recruiterLinkedin"
-                    placeholder="https://linkedin.com/in/anasilva"
-                    value={form.recruiterLinkedin}
-                    onChange={(e) => update('recruiterLinkedin', e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Actions */}
+        <div className="flex gap-3 animate-fade-up stagger-3" style={{ animationFillMode: 'forwards' }}>
+          <button
+            onClick={() => router.push('/')}
+            className="flex items-center gap-2 px-5 py-3 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:border-white/20 hover:bg-white/5 transition-all text-sm font-medium"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar
+          </button>
 
-          {/* Actions */}
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={() => router.push('/')} className="flex items-center gap-2">
-              <ArrowLeft className="h-4 w-4" /> Voltar
-            </Button>
-            <Button onClick={handleSubmit} className="flex-1 h-11 font-semibold text-base">
-              <Sparkles className="mr-2 h-4 w-4" />
-              Gerar Emails com IA
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
+          <button
+            onClick={handleSubmit}
+            className="btn-coral flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
+          >
+            <Sparkles className="h-4 w-4" />
+            Gerar Emails com IA
+            <ArrowRight className="h-4 w-4" />
+          </button>
         </div>
       </div>
-    </main>
+    </div>
   )
 }

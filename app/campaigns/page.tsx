@@ -2,16 +2,6 @@
 
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import {
   FolderOpen,
   Plus,
@@ -26,27 +16,27 @@ import {
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { CampaignStatus } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
-const statusConfig: Record<CampaignStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info' | 'muted' }> = {
-  draft: { label: 'Rascunho', variant: 'muted' },
-  generating: { label: 'Gerando', variant: 'info' },
-  ready: { label: 'Pronto', variant: 'warning' },
-  sending: { label: 'Enviando', variant: 'info' },
-  completed: { label: 'Concluido', variant: 'success' },
+const STATUS_CONFIG: Record<CampaignStatus, { label: string; classes: string }> = {
+  draft:      { label: 'Rascunho', classes: 'bg-white/5 text-brand-muted border-white/10' },
+  generating: { label: 'Gerando',  classes: 'bg-brand-coral/10 text-brand-coral border-brand-coral/20' },
+  ready:      { label: 'Pronto',   classes: 'bg-brand-warning/10 text-brand-warning border-brand-warning/20' },
+  sending:    { label: 'Enviando', classes: 'bg-brand-coral/10 text-brand-coral border-brand-coral/20' },
+  completed:  { label: 'Concluído', classes: 'bg-brand-success/10 text-brand-success border-brand-success/20' },
 }
 
 export default function CampaignsPage() {
-  const router = useRouter()
+  const router  = useRouter()
   const { campaigns, sentEmails, setActiveCampaign, deleteCampaign, reopenCampaign } = useAppStore()
 
-  const totalCampaigns = campaigns.length
-  const totalSentEmails = sentEmails.filter((e) => e.status === 'sent').length
-  const totalFailed = sentEmails.filter((e) => e.status === 'failed').length
-  const successRate = totalSentEmails + totalFailed > 0
-    ? Math.round((totalSentEmails / (totalSentEmails + totalFailed)) * 100)
+  const totalSent    = sentEmails.filter((e) => e.status === 'sent').length
+  const totalFailed  = sentEmails.filter((e) => e.status === 'failed').length
+  const successRate  = totalSent + totalFailed > 0
+    ? Math.round((totalSent / (totalSent + totalFailed)) * 100)
     : 0
 
-  const handleOpenCampaign = (id: string, status: CampaignStatus) => {
+  const handleOpen = (id: string, status: CampaignStatus) => {
     setActiveCampaign(id)
     if (status === 'draft') router.push('/campaign')
     else if (status === 'generating' || status === 'ready') router.push('/review')
@@ -54,168 +44,157 @@ export default function CampaignsPage() {
     else router.push('/sent')
   }
 
-  const handleDeleteCampaign = (id: string, name: string) => {
-    if (confirm(`Tem certeza que deseja excluir a campanha "${name}"? Esta acao nao pode ser desfeita.`)) {
+  const handleDelete = (id: string, name: string) => {
+    if (confirm(`Excluir a campanha "${name}"? Esta ação não pode ser desfeita.`)) {
       deleteCampaign(id)
     }
   }
 
-  const handleReopenCampaign = (id: string, name: string) => {
-    if (confirm(`Reabrir a campanha "${name}"? Candidatos nao enviados voltarao para geracao.`)) {
+  const handleReopen = (id: string, name: string) => {
+    if (confirm(`Reabrir "${name}"? Candidatos não enviados voltarão para geração.`)) {
       reopenCampaign(id)
       setActiveCampaign(id)
       router.push('/review')
     }
   }
 
+  const stats = [
+    { label: 'Campanhas',     value: campaigns.length, icon: <FolderOpen className="h-5 w-5 text-brand-coral" />,    bg: 'bg-brand-coral/8 border-brand-coral/20' },
+    { label: 'Emails enviados', value: totalSent,      icon: <Send className="h-5 w-5 text-brand-success" />,        bg: 'bg-brand-success/8 border-brand-success/20' },
+    { label: 'Taxa de sucesso', value: `${successRate}%`, icon: <BarChart3 className="h-5 w-5 text-brand-warning" />, bg: 'bg-brand-warning/8 border-brand-warning/20' },
+  ]
+
   return (
-    <main className="min-h-[calc(100vh-3.5rem)] bg-background">
-      <div className="max-w-5xl mx-auto p-8 space-y-6">
-        <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-brand-dark">
+      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+        {/* Header */}
+        <div className="flex items-center justify-between animate-fade-up" style={{ animationFillMode: 'forwards' }}>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Campanhas</h1>
-            <p className="text-muted-foreground text-sm mt-1">Gerencie todas as suas campanhas de outreach</p>
+            <h1 className="text-3xl font-display font-bold text-brand-white">Campanhas</h1>
+            <p className="text-brand-muted text-sm mt-1">Gerencie todas as suas campanhas de outreach</p>
           </div>
-          <Button onClick={() => router.push('/')} className="gap-2">
+          <button
+            onClick={() => router.push('/')}
+            className="btn-coral flex items-center gap-2 px-4 py-2.5 text-sm font-semibold"
+          >
             <Plus className="h-4 w-4" /> Nova Campanha
-          </Button>
+          </button>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="rounded-xl border border-border bg-card p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <FolderOpen className="h-5 w-5 text-primary" />
-              </div>
+        <div className="grid grid-cols-3 gap-4 animate-fade-up stagger-1" style={{ animationFillMode: 'forwards' }}>
+          {stats.map(({ label, value, icon, bg }) => (
+            <div key={label} className={cn('rounded-xl border p-5 flex items-center gap-4', bg)}>
+              <div className="flex-shrink-0">{icon}</div>
               <div>
-                <p className="text-2xl font-bold text-foreground">{totalCampaigns}</p>
-                <p className="text-xs text-muted-foreground">Total campanhas</p>
+                <p className="text-2xl font-display font-bold text-brand-white">{value}</p>
+                <p className="text-xs text-brand-muted mt-0.5">{label}</p>
               </div>
             </div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                <Send className="h-5 w-5 text-emerald-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{totalSentEmails}</p>
-                <p className="text-xs text-muted-foreground">Emails enviados</p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <BarChart3 className="h-5 w-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{successRate}%</p>
-                <p className="text-xs text-muted-foreground">Taxa de sucesso</p>
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* Table */}
+        {/* Campaigns list */}
         {campaigns.length === 0 ? (
-          <div className="rounded-xl border border-border bg-card p-16 text-center">
-            <FolderOpen className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
-            <p className="text-lg font-medium text-foreground">Nenhuma campanha ainda</p>
-            <p className="text-sm text-muted-foreground mt-1 mb-4">
+          <div className="rounded-xl border border-white/8 bg-brand-charcoal p-20 text-center animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
+            <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4">
+              <FolderOpen className="h-8 w-8 text-brand-muted opacity-40" />
+            </div>
+            <h2 className="text-lg font-display font-semibold text-brand-white">Nenhuma campanha ainda</h2>
+            <p className="text-sm text-brand-muted mt-1.5 mb-6">
               Crie sua primeira campanha importando um CSV do Apollo.io
             </p>
-            <Button onClick={() => router.push('/')} className="gap-2">
+            <button
+              onClick={() => router.push('/')}
+              className="btn-coral inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold"
+            >
               <Plus className="h-4 w-4" /> Criar campanha
-            </Button>
+            </button>
           </div>
         ) : (
-          <div className="rounded-xl border border-border overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome da campanha</TableHead>
-                  <TableHead>Data de criacao</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-center">Candidatos</TableHead>
-                  <TableHead className="text-center">Aprovados</TableHead>
-                  <TableHead className="text-center">Enviados</TableHead>
-                  <TableHead className="w-[120px]">Acoes</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaigns.map((c) => {
-                  const { label, variant } = statusConfig[c.status]
+          <div className="rounded-xl border border-white/8 overflow-hidden animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/5 bg-brand-charcoal">
+                  {['Nome', 'Criado em', 'Status', 'Candidatos', 'Aprovados', 'Enviados', 'Ações'].map((h) => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-brand-muted uppercase tracking-widest">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {campaigns.map((c, i) => {
+                  const { label, classes } = STATUS_CONFIG[c.status]
                   return (
-                    <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50">
-                      <TableCell>
+                    <tr
+                      key={c.id}
+                      className="hover:bg-white/2 transition-colors animate-fade-up opacity-0"
+                      style={{ animationDelay: `${i * 30}ms`, animationFillMode: 'forwards' }}
+                    >
+                      <td className="px-4 py-4">
                         <button
-                          className="font-medium text-foreground text-sm hover:text-primary transition-colors text-left"
-                          onClick={() => handleOpenCampaign(c.id, c.status)}
+                          onClick={() => handleOpen(c.id, c.status)}
+                          className="font-semibold text-brand-white hover:text-brand-coral transition-colors text-left"
                         >
                           {c.name}
                         </button>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5" />
+                      </td>
+                      <td className="px-4 py-4 text-brand-muted">
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="h-3.5 w-3.5 flex-shrink-0" />
                           {formatDate(c.createdAt)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={variant}>{label}</Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border', classes)}>
+                          {label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="flex items-center gap-1.5 text-brand-muted">
                           <Users className="h-3.5 w-3.5" />
                           {c.totalCandidates}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <span className="text-sm text-foreground font-medium">{c.approvedCount}</span>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <span className="text-sm text-emerald-400 font-medium">{c.sentCount || 0}</span>
-                      </TableCell>
-                      <TableCell>
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="font-medium text-brand-white">{c.approvedCount}</span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="font-medium text-brand-success">{c.sentCount || 0}</span>
+                      </td>
+                      <td className="px-4 py-4">
                         <div className="flex items-center gap-1">
-                          {(c.status === 'completed' || c.status === 'sending' || c.status === 'ready') && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 gap-1 text-xs text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
-                              onClick={() => handleReopenCampaign(c.id, c.name)}
+                          {['completed', 'sending', 'ready'].includes(c.status) && (
+                            <button
+                              onClick={() => handleReopen(c.id, c.name)}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-brand-warning hover:bg-brand-warning/10 border border-brand-warning/20 transition-all"
                             >
                               <RotateCcw className="h-3 w-3" /> Reabrir
-                            </Button>
+                            </button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 gap-1 text-xs"
-                            onClick={() => handleOpenCampaign(c.id, c.status)}
+                          <button
+                            onClick={() => handleOpen(c.id, c.status)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-brand-muted hover:text-brand-white hover:bg-white/5 transition-all"
                           >
                             Abrir <ArrowRight className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => handleDeleteCampaign(c.id, c.name)}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(c.id, c.name)}
+                            className="p-1.5 rounded-lg text-brand-muted hover:text-brand-error hover:bg-brand-error/10 transition-all"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          </button>
                         </div>
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   )
                 })}
-              </TableBody>
-            </Table>
+              </tbody>
+            </table>
           </div>
         )}
       </div>
-    </main>
+    </div>
   )
 }

@@ -3,11 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store'
-import { Candidate } from '@/lib/types'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Badge } from '@/components/ui/badge'
 import {
   Send,
   CheckCircle2,
@@ -35,8 +30,8 @@ export default function SendingPage() {
 
   const campaignId = activeCampaignId
   const candidates = campaignId ? candidatesByCampaign[campaignId] ?? [] : []
-  const campaign = campaigns.find((c) => c.id === campaignId)
-  const config = campaignId ? campaignConfigById[campaignId] : undefined
+  const campaign   = campaigns.find((c) => c.id === campaignId)
+  const config     = campaignId ? campaignConfigById[campaignId] : undefined
 
   const [isSending, setIsSending] = useState(false)
   const [isDone, setIsDone] = useState(false)
@@ -50,12 +45,10 @@ export default function SendingPage() {
     (c) => c.status === 'approved' || c.status === 'sent' || c.status === 'sending' || c.status === 'failed'
   )
   const pendingApproved = candidates.filter((c) => c.status === 'approved')
-  const alreadySent = candidates.filter((c) => c.status === 'sent').length
+  const alreadySent     = candidates.filter((c) => c.status === 'sent').length
 
   useEffect(() => {
-    if (!campaignId || candidates.length === 0) {
-      router.replace('/')
-    }
+    if (!campaignId || candidates.length === 0) router.replace('/')
   }, [campaignId, candidates.length, router])
 
   useEffect(() => {
@@ -78,12 +71,11 @@ export default function SendingPage() {
     abortRef.current = false
     updateCampaign(campaignId, { status: 'sending' })
 
-    let sent = alreadySent
+    let sent   = alreadySent
     let failed = failedCount
 
     for (const candidate of toSend) {
       if (abortRef.current) break
-
       setCurrentSending(candidate.id)
       updateCandidate(campaignId, candidate.id, { status: 'sending' })
 
@@ -92,74 +84,52 @@ export default function SendingPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to: candidate.email,
-            subject: candidate.editedSubject || candidate.generatedSubject,
-            body: candidate.editedBody || candidate.generatedBody,
+            to:            candidate.email,
+            subject:       candidate.editedSubject || candidate.generatedSubject,
+            body:          candidate.editedBody || candidate.generatedBody,
             candidateName: candidate.fullName,
             recruiterName: config?.recruiterName,
           }),
         })
-
         const data = await res.json()
 
         if (!res.ok || !data.success) {
-          updateCandidate(campaignId, candidate.id, {
-            status: 'failed',
-            errorMessage: data.error || 'Erro ao enviar.',
-          })
+          updateCandidate(campaignId, candidate.id, { status: 'failed', errorMessage: data.error || 'Erro ao enviar.' })
           addSentEmail({
             id: `sent-${Date.now()}-${candidate.id}`,
-            campaignId,
-            campaignName: campaign?.name || '',
-            candidateName: candidate.fullName,
-            company: candidate.company,
-            email: candidate.email,
-            subject: candidate.editedSubject || candidate.generatedSubject,
+            campaignId, campaignName: campaign?.name || '',
+            candidateName: candidate.fullName, company: candidate.company,
+            email: candidate.email, subject: candidate.editedSubject || candidate.generatedSubject,
             body: candidate.editedBody || candidate.generatedBody,
-            status: 'failed',
-            errorMessage: data.error || 'Erro ao enviar.',
+            status: 'failed', errorMessage: data.error || 'Erro ao enviar.',
             sentAt: new Date().toISOString(),
           })
-          failed++
-          setFailedCount(failed)
+          failed++; setFailedCount(failed)
         } else {
           const sentAt = new Date().toISOString()
           updateCandidate(campaignId, candidate.id, { status: 'sent', sentAt })
           addSentEmail({
             id: `sent-${Date.now()}-${candidate.id}`,
-            campaignId,
-            campaignName: campaign?.name || '',
-            candidateName: candidate.fullName,
-            company: candidate.company,
-            email: candidate.email,
-            subject: candidate.editedSubject || candidate.generatedSubject,
+            campaignId, campaignName: campaign?.name || '',
+            candidateName: candidate.fullName, company: candidate.company,
+            email: candidate.email, subject: candidate.editedSubject || candidate.generatedSubject,
             body: candidate.editedBody || candidate.generatedBody,
-            status: 'sent',
-            sentAt,
+            status: 'sent', sentAt,
           })
-          sent++
-          setSentCount(sent)
+          sent++; setSentCount(sent)
         }
       } catch {
-        updateCandidate(campaignId, candidate.id, {
-          status: 'failed',
-          errorMessage: 'Falha de conexao com o servidor.',
-        })
+        updateCandidate(campaignId, candidate.id, { status: 'failed', errorMessage: 'Falha de conexão.' })
         addSentEmail({
           id: `sent-${Date.now()}-${candidate.id}`,
-          campaignId,
-          campaignName: campaign?.name || '',
-          candidateName: candidate.fullName,
-          company: candidate.company,
-          email: candidate.email,
-          subject: candidate.editedSubject || candidate.generatedSubject,
+          campaignId, campaignName: campaign?.name || '',
+          candidateName: candidate.fullName, company: candidate.company,
+          email: candidate.email, subject: candidate.editedSubject || candidate.generatedSubject,
           body: candidate.editedBody || candidate.generatedBody,
-          status: 'failed',
-          errorMessage: 'Falha de conexao com o servidor.',
+          status: 'failed', errorMessage: 'Falha de conexão.',
           sentAt: new Date().toISOString(),
         })
-        failed++
-        setFailedCount(failed)
+        failed++; setFailedCount(failed)
       }
 
       if (!abortRef.current) await delay(500)
@@ -170,7 +140,7 @@ export default function SendingPage() {
     setIsDone(true)
     updateCampaign(campaignId, { status: 'completed' })
 
-    const totalSent = candidates.filter((c) => c.status === 'sent').length
+    const totalSent   = candidates.filter((c) => c.status === 'sent').length
     const totalFailed = candidates.filter((c) => c.status === 'failed').length
 
     if (totalFailed === 0) {
@@ -180,150 +150,171 @@ export default function SendingPage() {
     }
   }
 
-  const progressPct = totalToSend > 0 ? Math.min(100, Math.round((sentCount / totalToSend) * 100)) : 0
+  const progressPct = totalToSend > 0 ? Math.min(100, Math.round(((sentCount + failedCount) / totalToSend) * 100)) : 0
+  const totalSentNow  = candidates.filter((c) => c.status === 'sent').length
+  const totalFailedNow = candidates.filter((c) => c.status === 'failed').length
 
   if (!campaignId || candidates.length === 0) return null
 
   return (
-    <main className="min-h-[calc(100vh-3.5rem)] bg-background flex flex-col">
+    <div className="min-h-screen bg-brand-dark flex flex-col">
+      {/* Warning banner */}
       {isSending && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-8 py-2 flex items-center justify-center gap-2 text-amber-500 text-sm font-medium">
+        <div className="bg-brand-warning/10 border-b border-brand-warning/20 px-8 py-2.5 flex items-center justify-center gap-2 text-brand-warning text-xs font-medium animate-fade-in">
           <AlertTriangle className="h-4 w-4" />
-          Envio em andamento — nao feche a pagina
+          Envio em andamento — não feche esta aba
         </div>
       )}
 
-      <div className="flex-1 flex flex-col items-center py-8 px-4">
-        <div className="w-full max-w-2xl space-y-6">
-          <div className="rounded-xl border border-border bg-card p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h1 className="text-xl font-bold text-foreground">Enviar emails</h1>
-              {isDone && (
-                <Badge variant="success" className="text-sm px-3 py-1">
-                  <CheckCircle2 className="h-4 w-4 mr-1.5" /> Concluido
-                </Badge>
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-lg space-y-8">
+          {/* Header */}
+          <div className="text-center space-y-2 animate-fade-up" style={{ animationFillMode: 'forwards' }}>
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-coral/10 border border-brand-coral/20 mb-2">
+              {isDone ? (
+                <CheckCircle2 className="h-8 w-8 text-brand-success" />
+              ) : isSending ? (
+                <Loader2 className="h-8 w-8 text-brand-coral animate-spin" />
+              ) : (
+                <Send className="h-8 w-8 text-brand-coral" />
               )}
             </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-muted/50 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-foreground">{pendingApproved.length + alreadySent}</p>
-                <p className="text-xs text-muted-foreground mt-1">Total aprovados</p>
-              </div>
-              <div className="bg-emerald-500/10 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-emerald-400">{candidates.filter((c) => c.status === 'sent').length}</p>
-                <p className="text-xs text-muted-foreground mt-1">Enviados</p>
-              </div>
-              <div className="bg-destructive/10 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold text-destructive">{candidates.filter((c) => c.status === 'failed').length}</p>
-                <p className="text-xs text-muted-foreground mt-1">Falharam</p>
-              </div>
-            </div>
-
-            {isSending && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Enviando sequencialmente...
-                  </span>
-                  <span className="font-medium text-foreground">{sentCount}/{totalToSend}</span>
-                </div>
-                <Progress value={progressPct} className="h-2.5" />
-              </div>
-            )}
+            <h1 className="text-3xl font-display font-bold text-brand-white">
+              {isDone ? 'Envio concluído' : isSending ? 'Enviando emails…' : 'Pronto para enviar'}
+            </h1>
+            <p className="text-brand-muted text-sm">
+              {isDone
+                ? `${totalSentNow} enviados · ${totalFailedNow} falharam`
+                : isSending
+                ? `${sentCount + failedCount} de ${totalToSend} processados`
+                : `${pendingApproved.length} emails aprovados aguardando envio`}
+            </p>
           </div>
 
-          {!isDone && (
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => router.push('/review')} disabled={isSending} className="gap-2">
-                <ArrowLeft className="h-4 w-4" /> Voltar para revisao
-              </Button>
-              <Button
-                className="flex-1 h-11 font-semibold text-base gap-2"
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-4 animate-fade-up stagger-1" style={{ animationFillMode: 'forwards' }}>
+            {[
+              { label: 'Aprovados', value: pendingApproved.length + alreadySent, color: 'text-brand-white', bg: 'bg-white/5 border-white/8' },
+              { label: 'Enviados',  value: totalSentNow,  color: 'text-brand-success', bg: 'bg-brand-success/5 border-brand-success/15' },
+              { label: 'Falhas',    value: totalFailedNow, color: 'text-brand-error',   bg: 'bg-brand-error/5 border-brand-error/15' },
+            ].map(({ label, value, color, bg }) => (
+              <div key={label} className={cn('rounded-xl border p-5 text-center', bg)}>
+                <p className={cn('text-3xl font-display font-bold', color)}>{value}</p>
+                <p className="text-xs text-brand-muted mt-1">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Progress bar */}
+          {isSending && (
+            <div className="space-y-2 animate-fade-in">
+              <div className="flex items-center justify-between text-xs text-brand-muted">
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-3 w-3 animate-spin text-brand-coral" /> Enviando sequencialmente…
+                </span>
+                <span className="font-mono">{sentCount + failedCount}/{totalToSend}</span>
+              </div>
+              <div className="h-3 rounded-full bg-white/5 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-brand-coral to-brand-orange rounded-full transition-all duration-700"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* CTA buttons */}
+          {!isDone ? (
+            <div className="flex gap-3 animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
+              <button
+                onClick={() => router.push('/review')}
+                disabled={isSending}
+                className="flex items-center gap-2 px-5 py-3 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:border-white/20 hover:bg-white/5 transition-all text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ArrowLeft className="h-4 w-4" /> Revisão
+              </button>
+              <button
                 onClick={handleSendAll}
                 disabled={isSending || pendingApproved.length === 0}
+                className="btn-coral flex-1 flex items-center justify-center gap-2 py-3 text-base font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
               >
                 {isSending ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> Enviando {sentCount + failedCount + 1} de {totalToSend}...</>
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Enviando {sentCount + failedCount + 1} de {totalToSend}…</>
                 ) : (
                   <><Send className="h-4 w-4" /> Enviar {pendingApproved.length} email{pendingApproved.length !== 1 ? 's' : ''}</>
                 )}
-              </Button>
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-3 animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
+              <button
+                onClick={() => router.push('/sent')}
+                className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:border-white/20 hover:bg-white/5 transition-all text-sm font-medium"
+              >
+                Ver resultados
+              </button>
+              <button
+                onClick={() => router.push('/campaigns')}
+                className="btn-coral flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
+              >
+                Campanhas <ArrowRight className="h-4 w-4" />
+              </button>
             </div>
           )}
 
-          {isDone && (
-            <div className="flex gap-3">
-              <Button variant="outline" className="gap-2" onClick={() => router.push('/emails')}>
-                Ver todos os emails enviados
-              </Button>
-              <Button className="flex-1 h-11 font-semibold" onClick={() => router.push('/campaigns')}>
-                Ver campanhas <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          )}
-
+          {/* Live send list */}
           {approvedCandidates.length > 0 && (
-            <div className="rounded-xl border border-border overflow-hidden">
-              <div className="px-4 py-3 border-b border-border bg-muted/30">
-                <h2 className="font-semibold text-sm text-foreground">
+            <div className="rounded-xl border border-white/8 overflow-hidden animate-fade-up stagger-3" style={{ animationFillMode: 'forwards' }}>
+              <div className="px-4 py-3 border-b border-white/5 bg-brand-charcoal">
+                <h2 className="text-xs font-medium text-brand-muted uppercase tracking-widest">
                   Emails desta campanha ({approvedCandidates.length})
                 </h2>
               </div>
-              <ScrollArea className="max-h-96">
-                <div className="divide-y divide-border">
-                  {approvedCandidates.map((c) => (
-                    <div
-                      key={c.id}
-                      className={cn(
-                        'flex items-center justify-between px-4 py-3 transition-colors',
-                        currentSending === c.id && 'bg-primary/5',
-                        c.status === 'sent' && 'opacity-70'
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        {c.status === 'sent' ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                        ) : c.status === 'failed' ? (
-                          <XCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                        ) : c.status === 'sending' ? (
-                          <Loader2 className="h-4 w-4 text-primary animate-spin flex-shrink-0" />
-                        ) : (
-                          <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        )}
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{c.fullName}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{c.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {c.status === 'failed' && c.errorMessage && (
-                          <span className="text-xs text-destructive max-w-[180px] truncate">{c.errorMessage}</span>
-                        )}
-                        {c.status === 'sent' && c.sentAt && (
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(c.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
-                        <Badge
-                          variant={
-                            c.status === 'sent' ? 'success' :
-                            c.status === 'failed' ? 'destructive' :
-                            c.status === 'sending' ? 'info' : 'warning'
-                          }
-                          className="text-xs"
-                        >
-                          {getStatusLabel(c.status)}
-                        </Badge>
+              <div className="divide-y divide-white/5 max-h-72 overflow-y-auto">
+                {approvedCandidates.map((c) => (
+                  <div
+                    key={c.id}
+                    className={cn(
+                      'flex items-center justify-between px-4 py-3 transition-colors',
+                      currentSending === c.id && 'bg-brand-coral/5'
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      {c.status === 'sent'    ? <CheckCircle2 className="h-4 w-4 text-brand-success flex-shrink-0" />
+                       : c.status === 'failed' ? <XCircle className="h-4 w-4 text-brand-error flex-shrink-0" />
+                       : c.status === 'sending' ? <Loader2 className="h-4 w-4 text-brand-coral animate-spin flex-shrink-0" />
+                       : <Clock className="h-4 w-4 text-brand-muted flex-shrink-0" />}
+                      <div>
+                        <p className="text-sm font-medium text-brand-white">{c.fullName}</p>
+                        <p className="text-xs text-brand-muted font-mono">{c.email}</p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </ScrollArea>
+                    <div className="flex items-center gap-3">
+                      {c.status === 'failed' && c.errorMessage && (
+                        <span className="text-xs text-brand-error max-w-[160px] truncate">{c.errorMessage}</span>
+                      )}
+                      {c.status === 'sent' && c.sentAt && (
+                        <span className="text-xs text-brand-muted font-mono">
+                          {new Date(c.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                      <span className={cn(
+                        'text-xs px-2 py-0.5 rounded-full border font-medium',
+                        c.status === 'sent'    ? 'bg-brand-success/10 text-brand-success border-brand-success/20'
+                        : c.status === 'failed' ? 'bg-brand-error/10 text-brand-error border-brand-error/20'
+                        : c.status === 'sending' ? 'bg-brand-coral/10 text-brand-coral border-brand-coral/20'
+                        : 'bg-white/5 text-brand-muted border-white/10'
+                      )}>
+                        {getStatusLabel(c.status)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
       </div>
-    </main>
+    </div>
   )
 }
