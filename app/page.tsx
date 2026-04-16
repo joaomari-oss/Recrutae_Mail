@@ -107,7 +107,7 @@ export default function UploadPage() {
             Nova Campanha
           </h1>
           <p className="text-brand-muted text-base">
-            Importe candidatos do Apollo.io e envie emails personalizados com IA
+            Importe candidatos do Apollo.io ou Octopus CRM e envie emails personalizados aos candidatos com IA
           </p>
         </div>
 
@@ -154,7 +154,7 @@ export default function UploadPage() {
               </div>
               <div>
                 <p className="text-brand-white font-semibold text-base">
-                  Arraste seu CSV do Apollo.io
+                  Arraste seu CSV do Apollo.io ou Octopus CRM
                 </p>
                 <p className="text-brand-muted text-sm mt-1">
                   ou{' '}
