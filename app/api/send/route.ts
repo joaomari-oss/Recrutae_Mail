@@ -156,7 +156,7 @@ ${htmlBody}
       subject,
       html: fullHtml,
       text: emailBody,
-      ...(replyToEmail ? { replyTo: replyToEmail } : {}),
+      ...(replyToEmail ? { reply_to: replyToEmail } : {}),
     })
 
     if (error) {
