@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
 
   const apiKey = process.env.RESEND_API_KEY
   const fromEmail = process.env.RESEND_FROM_EMAIL
+  const replyToEmail = process.env.REPLY_TO_EMAIL
 
   if (!apiKey) {
     return NextResponse.json(
@@ -155,6 +156,7 @@ ${htmlBody}
       subject,
       html: fullHtml,
       text: emailBody,
+      ...(replyToEmail ? { replyTo: replyToEmail } : {}),
     })
 
     if (error) {
