@@ -18,7 +18,7 @@ function StoreInitializer() {
 }
 
 // Pages that render full-screen without the sidebar
-const NO_SIDEBAR_PATHS = ['/', '/login']
+const NO_SIDEBAR_PATHS = ['/login']
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

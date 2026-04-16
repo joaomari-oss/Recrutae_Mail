@@ -76,7 +76,7 @@ export default function UploadPage() {
   const hasData = parsedCandidates.length > 0
 
   return (
-    <main className="min-h-screen bg-brand-dark flex flex-col items-center justify-center px-6 py-12 relative overflow-hidden">
+    <main className="min-h-full bg-brand-dark flex flex-col items-center justify-center px-6 py-12 relative overflow-hidden">
       {/* Subtle background glow */}
       <div
         aria-hidden
