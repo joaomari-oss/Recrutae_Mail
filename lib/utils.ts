@@ -71,7 +71,7 @@ export function parseCSVFile(file: File): Promise<Candidate[]> {
             )
 
             return {
-              id: `candidate-${Date.now()}-${index}`,
+              id: `candidate-${crypto.randomUUID()}`,
               firstName,
               lastName,
               fullName: `${firstName} ${lastName}`.trim() || email.split('@')[0],
@@ -84,6 +84,7 @@ export function parseCSVFile(file: File): Promise<Candidate[]> {
               generatedBody: '',
               editedSubject: '',
               editedBody: '',
+              sendAttempts: 0,
             }
           })
 
@@ -92,7 +93,16 @@ export function parseCSVFile(file: File): Promise<Candidate[]> {
           return
         }
 
-        resolve(candidates)
+        // Deduplicate by email within the same CSV
+        const seen = new Set<string>()
+        const deduped = candidates.filter((c) => {
+          const key = c.email.toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+
+        resolve(deduped)
       },
       error: (error) => {
         reject(new Error(`Erro ao processar CSV: ${error.message}`))
@@ -126,6 +136,30 @@ export function exportToCSV(data: Record<string, string>[], filename: string) {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
+}
+
+/**
+ * Wraps fetch with an AbortController-based timeout.
+ * Throws an Error with message 'Timeout' if the request exceeds `timeoutMs`.
+ */
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 30_000
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Timeout: servidor não respondeu a tempo.')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export function getStatusLabel(status: Candidate['status']): string {

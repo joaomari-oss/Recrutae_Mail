@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { Candidate, Campaign, CampaignConfig, SentEmail } from '@/lib/types'
+import { canTransition } from '@/lib/statusMachine'
 
 interface AppStore {
   campaigns: Campaign[]
@@ -28,6 +29,11 @@ interface AppStore {
   // Helpers
   deleteCampaign: (id: string) => void
   reopenCampaign: (id: string) => void
+  /**
+   * Force-resets candidates stuck in 'sending' back to 'approved'.
+   * Bypasses the state machine — only for recovery after a crashed session.
+   */
+  resetStuckCandidates: (campaignId: string) => number
   getActiveCandidates: () => Candidate[]
   getActiveConfig: () => CampaignConfig | null
   getActiveCampaign: () => Campaign | null
@@ -52,7 +58,7 @@ export const useAppStore = create<AppStore>()(
       sentEmails: [],
 
       createCampaign: (name, candidates) => {
-        const id = `campaign-${Date.now()}`
+        const id = `campaign-${crypto.randomUUID()}`
         const campaign: Campaign = {
           id,
           name,
@@ -63,11 +69,16 @@ export const useAppStore = create<AppStore>()(
           sentCount: 0,
           failedCount: 0,
         }
+        // Ensure all candidates have sendAttempts initialized
+        const normalized = candidates.map((c) => ({
+          ...c,
+          sendAttempts: c.sendAttempts ?? 0,
+        }))
         set((state) => ({
           campaigns: [campaign, ...state.campaigns],
           candidatesByCampaign: {
             ...state.candidatesByCampaign,
-            [id]: candidates,
+            [id]: normalized,
           },
           activeCampaignId: id,
         }))
@@ -86,6 +97,26 @@ export const useAppStore = create<AppStore>()(
       updateCandidate: (campaignId, candidateId, updates) =>
         set((state) => {
           const candidates = state.candidatesByCampaign[campaignId] ?? []
+          const target = candidates.find((c) => c.id === candidateId)
+
+          if (target && updates.status) {
+            // Protect terminal state: 'sent' never reverts
+            if (target.status === 'sent' && updates.status !== 'sent') {
+              console.warn(
+                `[store] Transição bloqueada: candidato ${candidateId} já está em 'sent'`
+              )
+              return {}
+            }
+
+            // Validate transition
+            if (!canTransition(target.status, updates.status)) {
+              console.warn(
+                `[store] Transição inválida: ${target.status} → ${updates.status} para ${candidateId}`
+              )
+              return {}
+            }
+          }
+
           const updated = candidates.map((c) =>
             c.id === candidateId ? { ...c, ...updates } : c
           )
@@ -144,11 +175,33 @@ export const useAppStore = create<AppStore>()(
 
       setSentEmails: (emails) =>
         set((state) => {
-          // Merge: add only emails not already in the store (by id)
           const existingIds = new Set(state.sentEmails.map((e) => e.id))
           const newEmails = emails.filter((e) => !existingIds.has(e.id))
           return { sentEmails: [...newEmails, ...state.sentEmails] }
         }),
+
+      resetStuckCandidates: (campaignId) => {
+        let count = 0
+        set((state) => {
+          const candidates = state.candidatesByCampaign[campaignId] ?? []
+          const stuck = candidates.filter((c) => c.status === 'sending')
+          if (stuck.length === 0) return {}
+          count = stuck.length
+          const updated = candidates.map((c) =>
+            c.status === 'sending' ? { ...c, status: 'approved' as const } : c
+          )
+          const approvedCount = updated.filter(
+            (c) => c.status === 'approved' || c.status === 'sent'
+          ).length
+          return {
+            candidatesByCampaign: { ...state.candidatesByCampaign, [campaignId]: updated },
+            campaigns: state.campaigns.map((camp) =>
+              camp.id === campaignId ? { ...camp, approvedCount } : camp
+            ),
+          }
+        })
+        return count
+      },
 
       deleteCampaign: (id) =>
         set((state) => {
@@ -165,12 +218,19 @@ export const useAppStore = create<AppStore>()(
       reopenCampaign: (id) =>
         set((state) => {
           const candidates = state.candidatesByCampaign[id] ?? []
-          // Reset candidates that were NOT sent: pending, generating, ready, approved, failed → back to pending
-          // Keep sent candidates untouched
           const updated = candidates.map((c) =>
             c.status === 'sent'
               ? c
-              : { ...c, status: 'pending' as const, generatedSubject: '', generatedBody: '', editedSubject: '', editedBody: '', errorMessage: undefined }
+              : {
+                  ...c,
+                  status: 'pending' as const,
+                  generatedSubject: '',
+                  generatedBody: '',
+                  editedSubject: '',
+                  editedBody: '',
+                  errorMessage: undefined,
+                  sendAttempts: 0,
+                }
           )
           const approvedCount = updated.filter((c) => c.status === 'approved' || c.status === 'sent').length
           const sentCount = updated.filter((c) => c.status === 'sent').length
@@ -212,3 +272,12 @@ export const useAppStore = create<AppStore>()(
     }
   )
 )
+
+// Cross-tab sync: rehydrate this tab's store when localStorage changes in another tab
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'recrutae-v2') {
+      useAppStore.persist.rehydrate()
+    }
+  })
+}

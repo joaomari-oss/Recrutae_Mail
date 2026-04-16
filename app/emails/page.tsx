@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
+import { apiFetch } from '@/lib/api-fetch'
 import { toast } from 'sonner'
 
 type Filter = 'all' | 'sent' | 'failed'
@@ -28,7 +29,7 @@ export default function EmailsPage() {
   const handleRecover = async () => {
     setRecovering(true)
     try {
-      const res  = await fetch('/api/recover')
+      const res  = await apiFetch('/api/recover')
       const data = await res.json()
       if (!res.ok || data.error) { toast.error(data.error || 'Erro ao recuperar emails.'); return }
       if (data.emails?.length > 0) { setSentEmails(data.emails); toast.success(`${data.emails.length} emails recuperados.`) }

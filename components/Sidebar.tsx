@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import React from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   Upload,
   Megaphone,
@@ -15,8 +15,10 @@ import {
   Mail,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getSessionId } from '@/lib/session'
 
 type NavEntry = {
   href:  string
@@ -26,11 +28,11 @@ type NavEntry = {
 }
 
 const navItems: NavEntry[] = [
-  { href: '/',        label: 'Upload',   icon: Upload,      match: (p) => p === '/' },
+  { href: '/',         label: 'Upload',   icon: Upload,      match: (p) => p === '/' },
   { href: '/campaign', label: 'Campanha', icon: Megaphone,   match: (p) => p === '/campaign' },
-  { href: '/review',  label: 'Revisão',  icon: Pencil,      match: (p) => p === '/review' },
-  { href: '/sending', label: 'Enviando', icon: Rocket,      match: (p) => p === '/sending' },
-  { href: '/sent',    label: 'Enviados', icon: CheckCircle, match: (p) => p === '/sent' },
+  { href: '/review',   label: 'Revisão',  icon: Pencil,      match: (p) => p === '/review' },
+  { href: '/sending',  label: 'Enviando', icon: Rocket,      match: (p) => p === '/sending' },
+  { href: '/sent',     label: 'Enviados', icon: CheckCircle, match: (p) => p === '/sent' },
 ]
 
 const bottomItems: NavEntry[] = [
@@ -40,7 +42,24 @@ const bottomItems: NavEntry[] = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [collapsed, setCollapsed] = useState(false)
+  const router   = useRouter()
+  const [collapsed, setCollapsed]   = useState(false)
+  const [sessionId, setSessionId]   = useState<string | null>(null)
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  useEffect(() => {
+    setSessionId(getSessionId())
+  }, [])
+
+  const handleLogout = async () => {
+    if (loggingOut) return
+    setLoggingOut(true)
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } finally {
+      router.replace('/login')
+    }
+  }
 
   const NavItem = ({ item }: { item: NavEntry }) => {
     const Icon = item.icon
@@ -52,17 +71,13 @@ export function Sidebar() {
         className={cn(
           'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
           'text-brand-muted hover:text-brand-white',
-          isActive
-            ? 'bg-brand-coral/10 text-brand-white'
-            : 'hover:bg-white/5',
+          isActive ? 'bg-brand-coral/10 text-brand-white' : 'hover:bg-white/5',
           collapsed && 'justify-center px-2'
         )}
       >
-        {/* Active indicator */}
         {isActive && (
           <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-brand-coral rounded-r-full" />
         )}
-
         <Icon
           className={cn(
             'flex-shrink-0 transition-colors duration-200',
@@ -70,19 +85,14 @@ export function Sidebar() {
             isActive ? 'text-brand-coral' : 'text-brand-muted group-hover:text-brand-white'
           )}
         />
-
         {!collapsed && (
-          <span
-            className={cn(
-              'text-sm font-medium whitespace-nowrap transition-all duration-200',
-              isActive ? 'text-brand-white' : 'text-brand-muted group-hover:text-brand-white'
-            )}
-          >
+          <span className={cn(
+            'text-sm font-medium whitespace-nowrap transition-all duration-200',
+            isActive ? 'text-brand-white' : 'text-brand-muted group-hover:text-brand-white'
+          )}>
             {item.label}
           </span>
         )}
-
-        {/* Tooltip when collapsed */}
         {collapsed && (
           <div className="pointer-events-none absolute left-full ml-2 px-2 py-1 bg-brand-charcoal border border-white/10 rounded-md text-xs text-brand-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
             {item.label}
@@ -100,12 +110,10 @@ export function Sidebar() {
       )}
     >
       {/* Logo */}
-      <div
-        className={cn(
-          'flex items-center h-16 border-b border-white/5 transition-all duration-300',
-          collapsed ? 'justify-center px-2' : 'px-4'
-        )}
-      >
+      <div className={cn(
+        'flex items-center h-16 border-b border-white/5 transition-all duration-300',
+        collapsed ? 'justify-center px-2' : 'px-4'
+      )}>
         <Link href="/" className="flex items-center justify-center">
           <Image
             src="/recrutae.webp"
@@ -124,13 +132,45 @@ export function Sidebar() {
           <NavItem key={item.href} item={item} />
         ))}
 
-        {/* Divider */}
         <div className="my-2 border-t border-white/5" />
 
         {bottomItems.map((item) => (
           <NavItem key={item.href} item={item} />
         ))}
       </nav>
+
+      {/* Session indicator */}
+      {!collapsed && sessionId && (
+        <div className="px-4 pb-1">
+          <span
+            className="text-[9px] text-brand-muted/50 font-mono select-none"
+            title={`Session ID: ${sessionId}`}
+          >
+            sessão {sessionId.slice(0, 8)}
+          </span>
+        </div>
+      )}
+
+      {/* Logout button */}
+      <div className="px-2 pb-1">
+        <button
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className={cn(
+            'group w-full flex items-center gap-2 px-3 py-2 rounded-lg text-brand-muted hover:text-brand-error hover:bg-brand-error/5 transition-all duration-200',
+            collapsed && 'justify-center px-2'
+          )}
+          title="Sair"
+        >
+          <LogOut className={cn('flex-shrink-0 h-4 w-4', collapsed && 'h-5 w-5')} />
+          {!collapsed && <span className="text-xs font-medium">Sair</span>}
+          {collapsed && (
+            <div className="pointer-events-none absolute left-full ml-2 px-2 py-1 bg-brand-charcoal border border-white/10 rounded-md text-xs text-brand-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
+              Sair
+            </div>
+          )}
+        </button>
+      </div>
 
       {/* Toggle collapse button */}
       <div className="p-2 border-t border-white/5">

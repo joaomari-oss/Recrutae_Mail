@@ -26,6 +26,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { apiFetch } from '@/lib/api-fetch'
 import { toast } from 'sonner'
 
 export default function ReviewPage() {
@@ -75,9 +76,8 @@ export default function ReviewPage() {
         if (abortGenerationRef.current) break
         updateCandidate(campaignId, candidate.id, { status: 'generating' })
         try {
-          const res = await fetch('/api/generate', {
+          const res = await apiFetch('/api/generate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               candidate,
               role: campaignConfig.role,
@@ -105,9 +105,8 @@ export default function ReviewPage() {
               toast.success(`Alternando para ${altProvider === 'groq' ? 'Groq' : 'OpenAI'}. Continuando…`)
               updateCandidate(campaignId, candidate.id, { status: 'generating' })
               try {
-                const retryRes = await fetch('/api/generate', {
+                const retryRes = await apiFetch('/api/generate', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     candidate,
                     role: campaignConfig.role,
@@ -209,9 +208,8 @@ export default function ReviewPage() {
   const handleRegenerate = useCallback(() => {
     if (!selectedCandidate || !campaignConfig || !campaignId) return
     updateCandidate(campaignId, selectedCandidate.id, { status: 'generating', errorMessage: undefined })
-    fetch('/api/generate', {
+    apiFetch('/api/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         candidate: selectedCandidate,
         role: campaignConfig.role,
@@ -250,9 +248,8 @@ export default function ReviewPage() {
     const regenerateAll = async () => {
       for (const candidate of failed) {
         try {
-          const res = await fetch('/api/generate', {
+          const res = await apiFetch('/api/generate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               candidate,
               role: campaignConfig.role,

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Groq from 'groq-sdk'
 import { GenerateEmailRequest } from '@/lib/types'
+import { validateApiKey, unauthorizedResponse } from '@/lib/api-auth'
+import { checkRateLimit } from '@/lib/rate-limiter'
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 const OPENAI_MODEL = 'gpt-4o-mini'
@@ -246,6 +248,16 @@ async function generateWithOpenAI(
 }
 
 export async function POST(req: NextRequest) {
+  if (!validateApiKey(req)) return unauthorizedResponse()
+
+  const { allowed } = checkRateLimit('generate-global', 30, 60_000)
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit excedido. Aguarde um momento antes de gerar mais emails.' },
+      { status: 429 }
+    )
+  }
+
   let body: GenerateEmailRequest
   try {
     body = await req.json()

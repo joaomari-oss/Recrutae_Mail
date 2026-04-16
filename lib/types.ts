@@ -25,6 +25,12 @@ export type Candidate = {
   editedBody: string
   sentAt?: string
   errorMessage?: string
+  /** Resend message ID returned after a successful send — proof of delivery */
+  resendMessageId?: string
+  /** Session ID of the tab/browser that sent this email */
+  sentBySessionId?: string
+  /** Number of send attempts — capped at MAX_SEND_ATTEMPTS */
+  sendAttempts: number
 }
 
 export type Campaign = {
@@ -63,6 +69,8 @@ export type SentEmail = {
   status: 'sent' | 'failed'
   errorMessage?: string
   sentAt: string
+  /** Session ID of the tab/browser that triggered the send */
+  sentBySessionId?: string
 }
 
 export type GenerateEmailRequest = {
@@ -90,10 +98,16 @@ export type SendEmailRequest = {
   body: string
   candidateName: string
   recruiterName?: string
+  /** Used server-side for idempotency — prevents duplicate sends */
+  campaignId?: string
+  /** Used server-side for idempotency — prevents duplicate sends */
+  candidateEmail?: string
 }
 
 export type SendEmailResponse = {
   success: boolean
   messageId?: string
   error?: string
+  /** True if this email was already sent in a previous request */
+  alreadySent?: boolean
 }

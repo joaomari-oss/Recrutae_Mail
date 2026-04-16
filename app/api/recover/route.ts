@@ -1,6 +1,18 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { validateApiKey, unauthorizedResponse } from '@/lib/api-auth'
+import { checkRateLimit } from '@/lib/rate-limiter'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!validateApiKey(req)) return unauthorizedResponse()
+
+  const { allowed } = checkRateLimit('recover-global', 10, 60_000)
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit excedido. Tente novamente em breve.' },
+      { status: 429 }
+    )
+  }
+
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
     return NextResponse.json({ error: 'RESEND_API_KEY nao configurada.' }, { status: 500 })
@@ -32,7 +44,6 @@ export async function GET() {
       return NextResponse.json({ emails: [] })
     }
 
-    // Map Resend emails to our SentEmail format
     const recoveredEmails = emailList
       .filter((e: any) => e.to && e.to.length > 0)
       .map((e: any) => ({

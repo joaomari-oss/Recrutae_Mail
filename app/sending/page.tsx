@@ -12,9 +12,49 @@ import {
   ArrowRight,
   Clock,
   AlertTriangle,
+  Play,
 } from 'lucide-react'
 import { cn, delay, getStatusLabel } from '@/lib/utils'
+import { apiFetch } from '@/lib/api-fetch'
+import { getSessionId } from '@/lib/session'
 import { toast } from 'sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+
+const MAX_SEND_ATTEMPTS = 2
+
+async function acquireLock(campaignId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await apiFetch('/api/campaign-lock', {
+      method: 'POST',
+      body: JSON.stringify({ campaignId, sessionId: getSessionId(), action: 'acquire' }),
+    })
+    const data = await res.json()
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || 'Não foi possível adquirir o lock.' }
+    }
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Falha de conexão ao adquirir lock.' }
+  }
+}
+
+async function releaseLock(campaignId: string): Promise<void> {
+  try {
+    await apiFetch('/api/campaign-lock', {
+      method: 'POST',
+      body: JSON.stringify({ campaignId, sessionId: getSessionId(), action: 'release' }),
+    })
+  } catch {
+    // Ignore — lock will expire naturally
+  }
+}
 
 export default function SendingPage() {
   const router = useRouter()
@@ -26,6 +66,7 @@ export default function SendingPage() {
     updateCandidate,
     updateCampaign,
     addSentEmail,
+    resetStuckCandidates,
   } = useAppStore()
 
   const campaignId = activeCampaignId
@@ -33,13 +74,16 @@ export default function SendingPage() {
   const campaign   = campaigns.find((c) => c.id === campaignId)
   const config     = campaignId ? campaignConfigById[campaignId] : undefined
 
-  const [isSending, setIsSending] = useState(false)
-  const [isDone, setIsDone] = useState(false)
+  const [isSending, setIsSending]         = useState(false)
+  const [isSubmitting, setIsSubmitting]   = useState(false)
+  const [isDone, setIsDone]               = useState(false)
   const [currentSending, setCurrentSending] = useState<string | null>(null)
-  const [sentCount, setSentCount] = useState(0)
-  const [failedCount, setFailedCount] = useState(0)
-  const [totalToSend, setTotalToSend] = useState(0)
-  const abortRef = useRef(false)
+  const [sentCount, setSentCount]         = useState(0)
+  const [failedCount, setFailedCount]     = useState(0)
+  const [totalToSend, setTotalToSend]     = useState(0)
+  const [showResumeDialog, setShowResumeDialog] = useState(false)
+  const abortRef    = useRef(false)
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const approvedCandidates = candidates.filter(
     (c) => c.status === 'approved' || c.status === 'sent' || c.status === 'sending' || c.status === 'failed'
@@ -47,101 +91,232 @@ export default function SendingPage() {
   const pendingApproved = candidates.filter((c) => c.status === 'approved')
   const alreadySent     = candidates.filter((c) => c.status === 'sent').length
 
+  // Redirect if no active campaign
   useEffect(() => {
     if (!campaignId || candidates.length === 0) router.replace('/')
   }, [campaignId, candidates.length, router])
 
+  // Detect interrupted sending session on mount
+  useEffect(() => {
+    if (!campaignId || !campaign) return
+
+    // Reset candidates stuck in 'sending' from a previous crashed session
+    const stuckCount = resetStuckCandidates(campaignId)
+
+    // If campaign was in 'sending' state but we just arrived fresh, offer to resume
+    if (campaign.status === 'sending') {
+      const freshCandidates = useAppStore.getState().candidatesByCampaign[campaignId] ?? []
+      const hasApproved = freshCandidates.some((c) => c.status === 'approved') || stuckCount > 0
+      if (hasApproved) {
+        setShowResumeDialog(true)
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warn before closing tab while sending
   useEffect(() => {
     if (!isSending) return
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+      // Release lock via keepalive fetch (survives page unload)
+      if (campaignId) {
+        fetch('/api/campaign-lock', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY ?? '',
+          },
+          body: JSON.stringify({ campaignId, sessionId: getSessionId(), action: 'release' }),
+          keepalive: true,
+        }).catch(() => {})
+      }
+    }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [isSending])
+  }, [isSending, campaignId])
+
+  // Heartbeat to renew lock every 60 seconds
+  useEffect(() => {
+    if (!isSending || !campaignId) return
+
+    heartbeatRef.current = setInterval(async () => {
+      try {
+        await apiFetch('/api/campaign-lock', {
+          method: 'POST',
+          body: JSON.stringify({ campaignId, sessionId: getSessionId(), action: 'heartbeat' }),
+        })
+      } catch {
+        // If heartbeat fails, lock expires naturally — that's acceptable
+      }
+    }, 60_000)
+
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current)
+    }
+  }, [isSending, campaignId])
 
   const handleSendAll = async () => {
-    if (!campaignId) return
-    const toSend = candidates.filter((c) => c.status === 'approved')
-    if (toSend.length === 0) { toast.error('Nenhum email aprovado para enviar.'); return }
+    if (!campaignId || isSubmitting || isSending) return
+
+    const toSend = useAppStore.getState().candidatesByCampaign[campaignId]?.filter(
+      (c) => c.status === 'approved'
+    ) ?? []
+
+    if (toSend.length === 0) {
+      toast.error('Nenhum email aprovado para enviar.')
+      return
+    }
+
+    setIsSubmitting(true)
+
+    // Acquire server-side lock before starting
+    const lockResult = await acquireLock(campaignId)
+    if (!lockResult.success) {
+      toast.error(lockResult.error || 'Não foi possível iniciar o envio.')
+      setIsSubmitting(false)
+      return
+    }
 
     const fixedTotal = toSend.length
     setTotalToSend(fixedTotal)
     setSentCount(0)
     setFailedCount(0)
     setIsSending(true)
+    setIsSubmitting(false)
+    setShowResumeDialog(false)
     abortRef.current = false
     updateCampaign(campaignId, { status: 'sending' })
 
     let sent   = alreadySent
-    let failed = failedCount
+    let failed = 0
 
     for (const candidate of toSend) {
       if (abortRef.current) break
+
+      // Read fresh state to avoid stale closure
+      const freshState = useAppStore.getState()
+      const fresh = freshState.candidatesByCampaign[campaignId]?.find((c) => c.id === candidate.id)
+
+      // Skip if already sent (from another tab or retry)
+      if (!fresh || fresh.status === 'sent') continue
+
+      // Skip if too many attempts
+      if ((fresh.sendAttempts ?? 0) >= MAX_SEND_ATTEMPTS) {
+        updateCandidate(campaignId, candidate.id, {
+          status: 'failed',
+          errorMessage: `Máximo de ${MAX_SEND_ATTEMPTS} tentativas atingido.`,
+        })
+        failed++
+        setFailedCount(failed)
+        continue
+      }
+
       setCurrentSending(candidate.id)
-      updateCandidate(campaignId, candidate.id, { status: 'sending' })
+      updateCandidate(campaignId, candidate.id, {
+        status: 'sending',
+        sendAttempts: (fresh.sendAttempts ?? 0) + 1,
+      })
 
       try {
-        const res = await fetch('/api/send', {
+        const res = await apiFetch('/api/send', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to:            candidate.email,
-            subject:       candidate.editedSubject || candidate.generatedSubject,
-            body:          candidate.editedBody || candidate.generatedBody,
-            candidateName: candidate.fullName,
-            recruiterName: config?.recruiterName,
+            to:             fresh.email,
+            subject:        fresh.editedSubject || fresh.generatedSubject,
+            body:           fresh.editedBody || fresh.generatedBody,
+            candidateName:  fresh.fullName,
+            recruiterName:  config?.recruiterName,
+            campaignId,
+            candidateEmail: fresh.email,
           }),
         })
         const data = await res.json()
 
         if (!res.ok || !data.success) {
-          updateCandidate(campaignId, candidate.id, { status: 'failed', errorMessage: data.error || 'Erro ao enviar.' })
-          addSentEmail({
-            id: `sent-${Date.now()}-${candidate.id}`,
-            campaignId, campaignName: campaign?.name || '',
-            candidateName: candidate.fullName, company: candidate.company,
-            email: candidate.email, subject: candidate.editedSubject || candidate.generatedSubject,
-            body: candidate.editedBody || candidate.generatedBody,
-            status: 'failed', errorMessage: data.error || 'Erro ao enviar.',
-            sentAt: new Date().toISOString(),
+          updateCandidate(campaignId, candidate.id, {
+            status: 'failed',
+            errorMessage: data.error || 'Erro ao enviar.',
           })
-          failed++; setFailedCount(failed)
+          addSentEmail({
+            id: crypto.randomUUID(),
+            campaignId,
+            campaignName: campaign?.name || '',
+            candidateName: fresh.fullName,
+            company: fresh.company,
+            email: fresh.email,
+            subject: fresh.editedSubject || fresh.generatedSubject,
+            body: fresh.editedBody || fresh.generatedBody,
+            status: 'failed',
+            errorMessage: data.error || 'Erro ao enviar.',
+            sentAt: new Date().toISOString(),
+            sentBySessionId: getSessionId(),
+          })
+          failed++
+          setFailedCount(failed)
         } else {
           const sentAt = new Date().toISOString()
-          updateCandidate(campaignId, candidate.id, { status: 'sent', sentAt })
-          addSentEmail({
-            id: `sent-${Date.now()}-${candidate.id}`,
-            campaignId, campaignName: campaign?.name || '',
-            candidateName: candidate.fullName, company: candidate.company,
-            email: candidate.email, subject: candidate.editedSubject || candidate.generatedSubject,
-            body: candidate.editedBody || candidate.generatedBody,
-            status: 'sent', sentAt,
+          updateCandidate(campaignId, candidate.id, {
+            status: 'sent',
+            sentAt,
+            resendMessageId: data.messageId,
+            sentBySessionId: getSessionId(),
           })
-          sent++; setSentCount(sent)
+          addSentEmail({
+            id: crypto.randomUUID(),
+            campaignId,
+            campaignName: campaign?.name || '',
+            candidateName: fresh.fullName,
+            company: fresh.company,
+            email: fresh.email,
+            subject: fresh.editedSubject || fresh.generatedSubject,
+            body: fresh.editedBody || fresh.generatedBody,
+            status: 'sent',
+            sentAt,
+            sentBySessionId: getSessionId(),
+          })
+          sent++
+          setSentCount(sent)
         }
-      } catch {
-        updateCandidate(campaignId, candidate.id, { status: 'failed', errorMessage: 'Falha de conexão.' })
+      } catch (err) {
+        const errorMessage = err instanceof Error && err.message.includes('Timeout')
+          ? 'Timeout: servidor não respondeu a tempo.'
+          : 'Falha de conexão.'
+        updateCandidate(campaignId, candidate.id, { status: 'failed', errorMessage })
         addSentEmail({
-          id: `sent-${Date.now()}-${candidate.id}`,
-          campaignId, campaignName: campaign?.name || '',
-          candidateName: candidate.fullName, company: candidate.company,
-          email: candidate.email, subject: candidate.editedSubject || candidate.generatedSubject,
-          body: candidate.editedBody || candidate.generatedBody,
-          status: 'failed', errorMessage: 'Falha de conexão.',
+          id: crypto.randomUUID(),
+          campaignId,
+          campaignName: campaign?.name || '',
+          candidateName: fresh.fullName,
+          company: fresh.company,
+          email: fresh.email,
+          subject: fresh.editedSubject || fresh.generatedSubject,
+          body: fresh.editedBody || fresh.generatedBody,
+          status: 'failed',
+          errorMessage,
           sentAt: new Date().toISOString(),
+          sentBySessionId: getSessionId(),
         })
-        failed++; setFailedCount(failed)
+        failed++
+        setFailedCount(failed)
       }
 
       if (!abortRef.current) await delay(500)
     }
+
+    // Release lock and clean up heartbeat
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current)
+    await releaseLock(campaignId)
 
     setCurrentSending(null)
     setIsSending(false)
     setIsDone(true)
     updateCampaign(campaignId, { status: 'completed' })
 
-    const totalSent   = candidates.filter((c) => c.status === 'sent').length
-    const totalFailed = candidates.filter((c) => c.status === 'failed').length
+    const finalState = useAppStore.getState()
+    const finalCandidates = finalState.candidatesByCampaign[campaignId] ?? []
+    const totalSent   = finalCandidates.filter((c) => c.status === 'sent').length
+    const totalFailed = finalCandidates.filter((c) => c.status === 'failed').length
 
     if (totalFailed === 0) {
       toast.success(`${totalSent} email(s) enviado(s) com sucesso!`)
@@ -150,14 +325,42 @@ export default function SendingPage() {
     }
   }
 
-  const progressPct = totalToSend > 0 ? Math.min(100, Math.round(((sentCount + failedCount) / totalToSend) * 100)) : 0
-  const totalSentNow  = candidates.filter((c) => c.status === 'sent').length
+  const progressPct = totalToSend > 0
+    ? Math.min(100, Math.round(((sentCount + failedCount) / totalToSend) * 100))
+    : 0
+  const totalSentNow   = candidates.filter((c) => c.status === 'sent').length
   const totalFailedNow = candidates.filter((c) => c.status === 'failed').length
 
   if (!campaignId || candidates.length === 0) return null
 
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col">
+      {/* Resume dialog */}
+      <Dialog open={showResumeDialog} onOpenChange={setShowResumeDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Retomar envio?</DialogTitle>
+            <DialogDescription>
+              Esta campanha foi interrompida antes de concluir. Há emails aprovados aguardando envio.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <button
+              onClick={() => setShowResumeDialog(false)}
+              className="px-4 py-2 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:bg-white/5 transition-all text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSendAll}
+              className="btn-coral px-5 py-2 text-sm font-semibold flex items-center gap-2"
+            >
+              <Play className="h-4 w-4" /> Retomar envio
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Warning banner */}
       {isSending && (
         <div className="bg-brand-warning/10 border-b border-brand-warning/20 px-8 py-2.5 flex items-center justify-center gap-2 text-brand-warning text-xs font-medium animate-fade-in">
@@ -194,9 +397,9 @@ export default function SendingPage() {
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-4 animate-fade-up stagger-1" style={{ animationFillMode: 'forwards' }}>
             {[
-              { label: 'Aprovados', value: pendingApproved.length + alreadySent, color: 'text-brand-white', bg: 'bg-white/5 border-white/8' },
-              { label: 'Enviados',  value: totalSentNow,  color: 'text-brand-success', bg: 'bg-brand-success/5 border-brand-success/15' },
-              { label: 'Falhas',    value: totalFailedNow, color: 'text-brand-error',   bg: 'bg-brand-error/5 border-brand-error/15' },
+              { label: 'Aprovados', value: pendingApproved.length + alreadySent, color: 'text-brand-white',   bg: 'bg-white/5 border-white/8' },
+              { label: 'Enviados',  value: totalSentNow,                          color: 'text-brand-success', bg: 'bg-brand-success/5 border-brand-success/15' },
+              { label: 'Falhas',    value: totalFailedNow,                        color: 'text-brand-error',   bg: 'bg-brand-error/5 border-brand-error/15' },
             ].map(({ label, value, color, bg }) => (
               <div key={label} className={cn('rounded-xl border p-5 text-center', bg)}>
                 <p className={cn('text-3xl font-display font-bold', color)}>{value}</p>
@@ -235,11 +438,13 @@ export default function SendingPage() {
               </button>
               <button
                 onClick={handleSendAll}
-                disabled={isSending || pendingApproved.length === 0}
+                disabled={isSending || isSubmitting || pendingApproved.length === 0}
                 className="btn-coral flex-1 flex items-center justify-center gap-2 py-3 text-base font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
               >
                 {isSending ? (
                   <><Loader2 className="h-4 w-4 animate-spin" /> Enviando {sentCount + failedCount + 1} de {totalToSend}…</>
+                ) : isSubmitting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Aguardando…</>
                 ) : (
                   <><Send className="h-4 w-4" /> Enviar {pendingApproved.length} email{pendingApproved.length !== 1 ? 's' : ''}</>
                 )}
