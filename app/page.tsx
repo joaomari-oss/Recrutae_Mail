@@ -28,6 +28,7 @@ export default function UploadPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
   const [showAllEmails, setShowAllEmails] = useState(false)
+  const [showAllTable, setShowAllTable] = useState(false)
   const [campaignName, setCampaignName] = useState('')
 
   const campaignNameRef = useRef(campaignName)
@@ -252,7 +253,7 @@ export default function UploadPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {parsedCandidates.slice(0, 8).map((c, i) => (
+                  {(showAllTable ? parsedCandidates : parsedCandidates.slice(0, 8)).map((c, i) => (
                     <tr
                       key={c.id}
                       className="hover:bg-white/2 transition-colors animate-fade-up opacity-0"
@@ -267,8 +268,17 @@ export default function UploadPage() {
                 </tbody>
               </table>
               {parsedCandidates.length > 8 && (
-                <div className="px-4 py-3 text-center text-xs text-brand-muted border-t border-white/5 bg-brand-charcoal/50">
-                  Mostrando 8 de {parsedCandidates.length} contatos
+                <div className="px-4 py-3 text-center border-t border-white/5 bg-brand-charcoal/50">
+                  <button
+                    onClick={() => setShowAllTable(!showAllTable)}
+                    className="flex items-center gap-1.5 mx-auto text-xs text-brand-coral hover:text-brand-orange transition-colors"
+                  >
+                    {showAllTable ? (
+                      <>Mostrar menos <ChevronUp className="h-3 w-3" /></>
+                    ) : (
+                      <>Ver todos os {parsedCandidates.length} contatos <ChevronDown className="h-3 w-3" /></>
+                    )}
+                  </button>
                 </div>
               )}
             </div>

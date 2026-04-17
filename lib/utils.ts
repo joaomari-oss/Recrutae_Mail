@@ -47,13 +47,17 @@ export function parseCSVFile(file: File): Promise<Candidate[]> {
 
         const candidates: Candidate[] = data
           .filter((row) => {
-            const email = getField(row, 'email', 'e-mail', 'email address')
+            const personalEmail = getField(row, 'personal email', 'personal_email', 'personal e-mail', 'email 2', 'secondary email')
+            const primaryEmail = getField(row, 'email', 'e-mail', 'email address')
+            const email = (personalEmail && personalEmail.includes('@')) ? personalEmail : primaryEmail
             return email && email.includes('@')
           })
           .map((row, index) => {
             const firstName = getField(row, 'first name', 'firstname', 'first_name')
             const lastName = getField(row, 'last name', 'lastname', 'last_name')
-            const email = getField(row, 'email', 'e-mail', 'email address')
+            const personalEmail = getField(row, 'personal email', 'personal_email', 'personal e-mail', 'email 2', 'secondary email')
+            const primaryEmail = getField(row, 'email', 'e-mail', 'email address')
+            const email = (personalEmail && personalEmail.includes('@')) ? personalEmail : primaryEmail
             const title = getField(row, 'title', 'job title', 'cargo', 'position')
             const company = getField(
               row,
