@@ -29,8 +29,9 @@ ESTRUTURA DO EMAIL (siga esta ordem exata):
 4. Descricao breve da posicao (baseada no jobDescription)
 5. Um destaque (crescimento, impacto, modelo remoto, etc.)
 6. Link para mais informacoes (se fornecido)
-7. CTA suave
-8. Assinatura
+7. Paragrafo de indicacoes (se houver link)
+8. CTA suave
+9. Assinatura
 
 REGRA CRITICA DE SAUDACAO:
 - A PRIMEIRA LINHA do email DEVE ser SEMPRE: "Olá, {firstName}!"
@@ -50,6 +51,8 @@ A posicao envolve {resumo_claro_baseado_no_jobDescription}, sendo uma boa oportu
 Para mais informacoes:
 {link}
 
+{paragrafo_indicacoes_variado}
+
 Se fizer sentido para voce, fico a disposicao para conversarmos melhor.
 
 Abracos,
@@ -58,11 +61,19 @@ Abracos,
 
 VARIACAO CONTROLADA (MUITO IMPORTANTE):
 - Mantenha a MESMA estrutura em todos os emails
-- Varie o fraseado LEVEMENTE em cada secao (10-20% de variacao)
-- Use sinonimos e mudancas naturais de fraseado
-- Alterne a estrutura das frases de forma sutil
+- Varie o fraseado LEVEMENTE em cada secao (15-25% de variacao)
+- Use sinonimos e mudancas naturais de fraseado:
+  * "Queria te apresentar" vs "Vi seu perfil" vs "Estou te escrevendo pois"
+  * "pode fazer sentido" vs "pode ser uma boa encaixe" vs "pode ser de seu interesse"
+  * "sendo uma boa oportunidade" vs "sendo uma excelente oportunidade" vs "sendo uma opcao interessante"
+  * Paragrafo de indicacoes com variacoes:
+    - "Se você conhece profissionais interessados nessa área, sinta-se livre para compartilhar. Indicações são sempre bem-vindas!"
+    - "Caso conheça alguém qualificado para essa posição, fique à vontade para indicar. Toda indicação é valiosa!"
+    - "Se souber de profissionais que se encaixem, compartilhe este e-mail. Indicações são fundamentais no nosso processo!"
+- Alterne a estrutura das frases de forma sutil (ordem de clausulas, conectores diferentes)
 - NAO crie emails totalmente diferentes
 - NAO adicione secoes extras
+- GARANTIR: cada email gerado para o mesmo candidato deve ser visivelmente diferente
 
 REGRA CRITICA SOBRE NOME DA EMPRESA:
 - {hiringCompany} e a empresa que TEM a vaga aberta.
@@ -78,16 +89,29 @@ REGRAS DE GERACAO:
 - NAO invente fatos sobre o candidato
 - NAO exagere beneficios
 - Tom humano, direto, como um recrutador real
-- Se nao houver link, omita a secao "Para mais informacoes:" inteiramente
+- Se nao houver link, omita as secoes "Para mais informacoes:" E o paragrafo de indicacoes inteiramente
 - NAO use listas com marcadores ou bullet points
 
-ANTI-SPAM:
-- Evite frases identicas entre emails
-- Evite palavras promocionais como "imperdivel", "incrivel", "fantastica"
-- Tom neutro e profissional
-- Apenas UM link permitido
-- Sem formatacao HTML pesada
-- Sem pontuacao excessiva (!!!, ???)
+REGRAS DE PORTUGUES (CRITICAS):
+- Use SEMPRE acentos corretos: á, é, í, ó, ú, ã, õ, ç
+- Exemplos corretos: "oportunidade", "apresentar", "interessado", "próximas", "módulos"
+- Exemplos ERRADOS que NAO devem aparecer: "oportunidade", "nao" (deve ser "não"), "ja" (deve ser "já")
+- Use "você" (com acento) e "à" (quando apropriado)
+- Mantenha coerencia: se usa "módulos" num email, varie para "area" ou "funcao" em outro
+- Nenhum "u" sem til quando necessario: "oportunidade", "frequente" (se usado)
+
+ANTI-SPAM (MUITO IMPORTANTE):
+- Evite frases identicas entre emails — SEMPRE varie fraseado mesmo que ligeiramente
+- Evite palavras promocionais e suspeitas: "imperdivel", "incrivel", "fantastica", "unica chance", "urgente", "limitado"
+- Evite multiplos pontos de exclamacao seguidos (!!!, ???)
+- Evite CAPSlock excessivo (use APENAS em abreviacoes como "RH")
+- Tom neutro e profissional — soe como um recrutador real, nao como marketing
+- Apenas UM link permitido (se fornecido)
+- Sem formatacao HTML pesada ou markdown
+- Nao use "Re:", "Fwd:" ou similares que sugerem respostas anteriores
+- Nao use "sender" ou "noreply" — sempre assinado com nome do recrutador
+- Construa credibilidade: cite a empresa com naturalidade, nao de forma promocional
+- A saudacao "Olá, {firstName}!" adiciona legitimidade (emails spammers usam "Prezado(a)" ou "Caro(a)")
 
 REGRAS DO ASSUNTO (varie entre eles):
 - "{role} na {hiringCompany}"
