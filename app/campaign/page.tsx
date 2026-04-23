@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Link,
   ArrowRight,
+  Tag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -105,10 +106,14 @@ const inputCls = (hasError?: boolean, hasIcon?: boolean) =>
 
 export default function CampaignPage() {
   const router = useRouter()
-  const { activeCampaignId, candidatesByCampaign, campaignConfigById, setCampaignConfig, updateCampaign } = useAppStore()
+  const { activeCampaignId, candidatesByCampaign, campaignConfigById, campaigns, setCampaignConfig, updateCampaign } = useAppStore()
 
   const candidates = activeCampaignId ? candidatesByCampaign[activeCampaignId] ?? [] : []
   const existingConfig = activeCampaignId ? campaignConfigById[activeCampaignId] : undefined
+  const currentCampaign = activeCampaignId ? campaigns.find((c) => c.id === activeCampaignId) : undefined
+
+  const [campaignName, setCampaignName] = useState(currentCampaign?.name ?? '')
+  const [nameError, setNameError] = useState<string | undefined>()
 
   const [form, setForm] = useState<CampaignConfig>({
     role:               existingConfig?.role ?? '',
@@ -129,6 +134,8 @@ export default function CampaignPage() {
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof CampaignConfig, string>> = {}
+    const nErr = !campaignName.trim() ? 'Nome da campanha é obrigatório.' : undefined
+    setNameError(nErr)
     if (!form.role.trim()) e.role = 'Nome do cargo é obrigatório.'
     if (!form.hiringCompany.trim()) e.hiringCompany = 'Nome da empresa contratante é obrigatório.'
     if (!form.jobDescription.trim()) e.jobDescription = 'Descrição da vaga é obrigatória.'
@@ -136,11 +143,12 @@ export default function CampaignPage() {
     if (!form.recruiterName.trim()) e.recruiterName = 'Seu nome é obrigatório.'
     if (!form.recruiterCompany.trim()) e.recruiterCompany = 'Sua empresa é obrigatória.'
     setErrors(e)
-    return Object.keys(e).length === 0
+    return Object.keys(e).length === 0 && !nErr
   }
 
   const handleSubmit = () => {
     if (!validate() || !activeCampaignId) return
+    if (campaignName.trim()) updateCampaign(activeCampaignId, { name: campaignName.trim() })
     setCampaignConfig(activeCampaignId, form)
     updateCampaign(activeCampaignId, { status: 'generating' })
     router.push('/review')
@@ -207,8 +215,33 @@ export default function CampaignPage() {
           </p>
         </div>
 
-        {/* Section 1: Job */}
+        {/* Section 0: Campaign name */}
         <div className="animate-fade-up stagger-1" style={{ animationFillMode: 'forwards' }}>
+          <FormCard
+            icon={<Tag className="h-4 w-4 text-brand-coral" />}
+            title="Nome da campanha"
+            description="Identificação interna da campanha. Pode ser editado depois na tela de campanhas."
+          >
+            <Field id="campaignName" label="Nome da campanha" required error={nameError}
+              icon={<Tag className="h-4 w-4" />}
+            >
+              <input
+                id="campaignName"
+                type="text"
+                placeholder="Ex: Engenheiros Backend — Q2 2025"
+                value={campaignName}
+                onChange={(e) => {
+                  setCampaignName(e.target.value)
+                  if (nameError) setNameError(undefined)
+                }}
+                className={inputCls(!!nameError, true)}
+              />
+            </Field>
+          </FormCard>
+        </div>
+
+        {/* Section 1: Job */}
+        <div className="animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
           <FormCard
             icon={<Briefcase className="h-4 w-4 text-brand-coral" />}
             title="A oportunidade"
@@ -278,7 +311,7 @@ export default function CampaignPage() {
         </div>
 
         {/* Section 2: Recruiter */}
-        <div className="animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
+        <div className="animate-fade-up stagger-3" style={{ animationFillMode: 'forwards' }}>
           <FormCard
             icon={<User className="h-4 w-4 text-brand-coral" />}
             title="Suas informações"
@@ -326,7 +359,7 @@ export default function CampaignPage() {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-3 animate-fade-up stagger-3" style={{ animationFillMode: 'forwards' }}>
+        <div className="flex gap-3 animate-fade-up stagger-4" style={{ animationFillMode: 'forwards' }}>
           <button
             onClick={() => router.push('/')}
             className="flex items-center gap-2 px-5 py-3 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:border-white/20 hover:bg-white/5 transition-all text-sm font-medium"

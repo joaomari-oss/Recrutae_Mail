@@ -13,6 +13,7 @@ import {
   Clock,
   AlertTriangle,
   Play,
+  RefreshCw,
 } from 'lucide-react'
 import { cn, delay, getStatusLabel } from '@/lib/utils'
 import { apiFetch } from '@/lib/api-fetch'
@@ -67,6 +68,7 @@ export default function SendingPage() {
     updateCampaign,
     addSentEmail,
     resetStuckCandidates,
+    retryFailedCandidates,
   } = useAppStore()
 
   const campaignId = activeCampaignId
@@ -219,21 +221,30 @@ export default function SendingPage() {
       })
 
       try {
-        const res = await apiFetch('/api/send', {
-          method: 'POST',
-          body: JSON.stringify({
-            to:             fresh.email,
-            subject:        fresh.editedSubject || fresh.generatedSubject,
-            body:           fresh.editedBody || fresh.generatedBody,
-            candidateName:  fresh.fullName,
-            recruiterName:  config?.recruiterName,
-            campaignId,
-            candidateEmail: fresh.email,
-          }),
-        })
-        const data = await res.json()
+        // Retry up to 3 times on 429 (rate limit) with exponential backoff
+        let res: Response | null = null
+        let data: any = null
+        for (let attempt = 0; attempt < 3; attempt++) {
+          res = await apiFetch('/api/send', {
+            method: 'POST',
+            body: JSON.stringify({
+              to:             fresh.email,
+              subject:        fresh.editedSubject || fresh.generatedSubject,
+              body:           fresh.editedBody || fresh.generatedBody,
+              candidateName:  fresh.fullName,
+              recruiterName:  config?.recruiterName,
+              campaignId,
+              candidateEmail: fresh.email,
+            }),
+          })
+          data = await res.json().catch(() => ({}))
+          // Break immediately on non-retriable responses (not 429 rate-limit and not 5xx server errors)
+          if (res.status !== 429 && res.status < 500) break
+          // Only wait if another retry will follow
+          if (attempt < 2) await delay(2000 * Math.pow(2, attempt))
+        }
 
-        if (!res.ok || !data.success) {
+        if (!res || !res.ok || !data?.success) {
           updateCandidate(campaignId, candidate.id, {
             status: 'failed',
             errorMessage: data.error || 'Erro ao enviar.',
@@ -264,6 +275,7 @@ export default function SendingPage() {
           })
           addSentEmail({
             id: crypto.randomUUID(),
+            resendMessageId: data.messageId,
             campaignId,
             campaignName: campaign?.name || '',
             candidateName: fresh.fullName,
@@ -451,19 +463,37 @@ export default function SendingPage() {
               </button>
             </div>
           ) : (
-            <div className="flex gap-3 animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
-              <button
-                onClick={() => router.push('/sent')}
-                className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:border-white/20 hover:bg-white/5 transition-all text-sm font-medium"
-              >
-                Ver resultados
-              </button>
-              <button
-                onClick={() => router.push('/campaigns')}
-                className="btn-coral flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
-              >
-                Campanhas <ArrowRight className="h-4 w-4" />
-              </button>
+            <div className="flex flex-col gap-3 animate-fade-up stagger-2" style={{ animationFillMode: 'forwards' }}>
+              {totalFailedNow > 0 && campaignId && (
+                <button
+                  onClick={() => {
+                    retryFailedCandidates(campaignId)
+                    setIsDone(false)
+                    setSentCount(0)
+                    setFailedCount(0)
+                    setTotalToSend(0)
+                    // Let store state flush before starting send loop
+                    setTimeout(() => handleSendAll(), 0)
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg border border-brand-error/30 text-brand-error hover:bg-brand-error/10 transition-all text-sm font-semibold"
+                >
+                  <RefreshCw className="h-4 w-4" /> Reenviar {totalFailedNow} email{totalFailedNow > 1 ? 's' : ''} falho{totalFailedNow > 1 ? 's' : ''}
+                </button>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => router.push('/sent')}
+                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:border-white/20 hover:bg-white/5 transition-all text-sm font-medium"
+                >
+                  Ver resultados
+                </button>
+                <button
+                  onClick={() => router.push('/campaigns')}
+                  className="btn-coral flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
+                >
+                  Campanhas <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           )}
 

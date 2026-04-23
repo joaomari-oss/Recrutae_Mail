@@ -23,7 +23,7 @@ type Filter = 'all' | 'sent' | 'failed'
 
 export default function SentPage() {
   const router = useRouter()
-  const { activeCampaignId, candidatesByCampaign } = useAppStore()
+  const { activeCampaignId, candidatesByCampaign, retryFailedCandidates } = useAppStore()
 
   const campaignId = activeCampaignId
   const candidates = campaignId ? candidatesByCampaign[campaignId] ?? [] : []
@@ -200,20 +200,31 @@ export default function SentPage() {
         </div>
 
         {/* Failed alert */}
-        {failed.length > 0 && (
+        {failed.length > 0 && campaignId && (
           <div className="rounded-xl border border-brand-error/20 bg-brand-error/5 p-4 flex items-center justify-between animate-fade-up stagger-3" style={{ animationFillMode: 'forwards' }}>
             <div>
               <p className="text-sm font-semibold text-brand-white">
                 {failed.length} email{failed.length > 1 ? 's' : ''} falharam no envio
               </p>
-              <p className="text-xs text-brand-muted mt-0.5">Volte para revisão para corrigir ou regenerar.</p>
+              <p className="text-xs text-brand-muted mt-0.5">Reenvie os falhos ou volte à revisão para editar.</p>
             </div>
-            <button
-              onClick={() => router.push('/review')}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-brand-error/20 text-brand-error hover:bg-brand-error/10 text-sm font-medium transition-all"
-            >
-              <RefreshCw className="h-4 w-4" /> Voltar à revisão
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => router.push('/review')}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:bg-white/5 text-sm font-medium transition-all"
+              >
+                Revisão
+              </button>
+              <button
+                onClick={() => {
+                  retryFailedCandidates(campaignId)
+                  router.push('/sending')
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-brand-error/20 bg-brand-error/10 text-brand-error hover:bg-brand-error/20 text-sm font-semibold transition-all"
+              >
+                <RefreshCw className="h-4 w-4" /> Reenviar {failed.length} falho{failed.length > 1 ? 's' : ''}
+              </button>
+            </div>
           </div>
         )}
       </div>

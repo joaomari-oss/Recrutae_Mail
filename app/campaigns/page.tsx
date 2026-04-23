@@ -1,22 +1,24 @@
 'use client'
 
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store'
 import {
   FolderOpen,
   Plus,
   Send,
-  CheckCircle2,
   BarChart3,
   Users,
   Clock,
   ArrowRight,
   Trash2,
   RotateCcw,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { CampaignStatus } from '@/lib/types'
-import { cn } from '@/lib/utils'
 
 const STATUS_CONFIG: Record<CampaignStatus, { label: string; classes: string }> = {
   draft:      { label: 'Rascunho', classes: 'bg-white/5 text-brand-muted border-white/10' },
@@ -28,7 +30,25 @@ const STATUS_CONFIG: Record<CampaignStatus, { label: string; classes: string }> 
 
 export default function CampaignsPage() {
   const router  = useRouter()
-  const { campaigns, sentEmails, setActiveCampaign, deleteCampaign, reopenCampaign } = useAppStore()
+  const { campaigns, campaignConfigById, sentEmails, setActiveCampaign, deleteCampaign, reopenCampaign, updateCampaign } = useAppStore()
+
+  const [editingId, setEditingId]     = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const startEdit = (id: string, name: string) => {
+    setEditingId(id)
+    setEditingName(name)
+    setTimeout(() => inputRef.current?.select(), 0)
+  }
+
+  const saveEdit = (id: string) => {
+    const trimmed = editingName.trim()
+    if (trimmed) updateCampaign(id, { name: trimmed })
+    setEditingId(null)
+  }
+
+  const cancelEdit = () => setEditingId(null)
 
   const totalSent    = sentEmails.filter((e) => e.status === 'sent').length
   const totalFailed  = sentEmails.filter((e) => e.status === 'failed').length
@@ -132,13 +152,60 @@ export default function CampaignsPage() {
                       className="hover:bg-white/2 transition-colors animate-fade-up opacity-0"
                       style={{ animationDelay: `${i * 30}ms`, animationFillMode: 'forwards' }}
                     >
-                      <td className="px-4 py-4">
-                        <button
-                          onClick={() => handleOpen(c.id, c.status)}
-                          className="font-semibold text-brand-white hover:text-brand-coral transition-colors text-left"
-                        >
-                          {c.name}
-                        </button>
+                      <td className="px-4 py-4 max-w-[260px]">
+                        {editingId === c.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              ref={inputRef}
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onBlur={() => saveEdit(c.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveEdit(c.id)
+                                if (e.key === 'Escape') cancelEdit()
+                              }}
+                              className="flex-1 min-w-0 bg-brand-dark border border-brand-coral/50 rounded-lg px-2.5 py-1.5 text-sm text-brand-white outline-none"
+                            />
+                            <button
+                              onMouseDown={(e) => { e.preventDefault(); saveEdit(c.id) }}
+                              className="p-1 rounded text-brand-success hover:bg-brand-success/10 transition-all"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onMouseDown={(e) => { e.preventDefault(); cancelEdit() }}
+                              className="p-1 rounded text-brand-muted hover:bg-white/5 transition-all"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-2 group">
+                            <div className="min-w-0">
+                              <button
+                                onClick={() => handleOpen(c.id, c.status)}
+                                className="font-semibold text-brand-white hover:text-brand-coral transition-colors text-left truncate block max-w-full"
+                              >
+                                {c.name}
+                              </button>
+                              {(() => {
+                                const cfg = campaignConfigById[c.id]
+                                const parts = [cfg?.hiringCompany, cfg?.role].filter(Boolean)
+                                return parts.length > 0 ? (
+                                  <p className="text-xs text-brand-muted/70 mt-0.5 truncate">
+                                    {parts.join(' · ')}
+                                  </p>
+                                ) : null
+                              })()}
+                            </div>
+                            <button
+                              onClick={() => startEdit(c.id, c.name)}
+                              className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-1 rounded hover:bg-white/5 text-brand-muted hover:text-brand-white transition-all mt-0.5"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-4 text-brand-muted">
                         <span className="flex items-center gap-1.5">

@@ -34,6 +34,8 @@ interface AppStore {
    * Bypasses the state machine — only for recovery after a crashed session.
    */
   resetStuckCandidates: (campaignId: string) => number
+  /** Resets all 'failed' candidates back to 'approved' so they can be resent. */
+  retryFailedCandidates: (campaignId: string) => number
   getActiveCandidates: () => Candidate[]
   getActiveConfig: () => CampaignConfig | null
   getActiveCampaign: () => Campaign | null
@@ -214,6 +216,34 @@ export const useAppStore = create<AppStore>()(
             activeCampaignId: state.activeCampaignId === id ? null : state.activeCampaignId,
           }
         }),
+
+      retryFailedCandidates: (campaignId) => {
+        let count = 0
+        set((state) => {
+          const candidates = state.candidatesByCampaign[campaignId] ?? []
+          const failed = candidates.filter((c) => c.status === 'failed')
+          if (failed.length === 0) return {}
+          count = failed.length
+          const updated = candidates.map((c) =>
+            c.status === 'failed'
+              ? { ...c, status: 'approved' as const, errorMessage: undefined, sendAttempts: 0 }
+              : c
+          )
+          const approvedCount = updated.filter(
+            (c) => c.status === 'approved' || c.status === 'sent'
+          ).length
+          const failedCount = 0
+          return {
+            candidatesByCampaign: { ...state.candidatesByCampaign, [campaignId]: updated },
+            campaigns: state.campaigns.map((camp) =>
+              camp.id === campaignId
+                ? { ...camp, status: 'ready' as const, approvedCount, failedCount }
+                : camp
+            ),
+          }
+        })
+        return count
+      },
 
       reopenCampaign: (id) =>
         set((state) => {

@@ -59,6 +59,8 @@ export type CampaignConfig = {
 
 export type SentEmail = {
   id: string
+  /** Resend message ID (re_xxx) — used to dedup on sync */
+  resendMessageId?: string
   campaignId: string
   campaignName: string
   candidateName: string

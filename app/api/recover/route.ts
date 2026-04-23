@@ -5,7 +5,7 @@ import { checkRateLimit } from '@/lib/rate-limiter'
 export async function GET(req: NextRequest) {
   if (!validateApiKey(req)) return unauthorizedResponse()
 
-  const { allowed } = checkRateLimit('recover-global', 10, 60_000)
+  const { allowed } = checkRateLimit('recover-global', 30, 60_000)
   if (!allowed) {
     return NextResponse.json(
       { error: 'Rate limit excedido. Tente novamente em breve.' },
@@ -19,35 +19,57 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Use Resend REST API directly — SDK v3 doesn't have emails.list()
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    })
+    // Paginate through all emails using cursor-based pagination (Resend uses 'after', not 'offset')
+    const allRaw: any[] = []
+    const limit = 100
+    let after: string | undefined
 
-    if (!res.ok) {
-      const errText = await res.text()
-      console.error('[/api/recover] Resend API error:', res.status, errText)
-      return NextResponse.json(
-        { error: `Resend API retornou ${res.status}: ${errText.slice(0, 200)}` },
-        { status: res.status }
+    while (true) {
+      const qs = new URLSearchParams({ limit: String(limit) })
+      if (after) qs.set('after', after)
+
+      const res = await fetch(
+        `https://api.resend.com/emails?${qs}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
       )
+
+      if (!res.ok) {
+        const errText = await res.text()
+        console.error('[/api/recover] Resend API error:', res.status, errText)
+        return NextResponse.json(
+          { error: `Resend API retornou ${res.status}: ${errText.slice(0, 200)}` },
+          { status: res.status }
+        )
+      }
+
+      const data = await res.json()
+      const page: any[] = data?.data || (Array.isArray(data) ? data : [])
+      allRaw.push(...page)
+
+      if (page.length < limit) break
+      after = page[page.length - 1]?.id
+      if (!after) break  // safety guard against infinite loop
+      if (allRaw.length > 10_000) break  // hard cap
     }
 
-    const data = await res.json()
-    const emailList = data?.data || data || []
-
-    if (!Array.isArray(emailList) || emailList.length === 0) {
+    if (allRaw.length === 0) {
       return NextResponse.json({ emails: [] })
     }
 
-    const recoveredEmails = emailList
+    // 'sent' = accepted by recipient's mail server; 'delivered'/'opened'/'clicked' = confirmed delivery
+    const SUCCESS_EVENTS = new Set(['sent', 'delivered', 'opened', 'clicked'])
+
+    const recoveredEmails = allRaw
       .filter((e: any) => e.to && e.to.length > 0)
       .map((e: any) => ({
         id: e.id,
+        resendMessageId: e.id,
         campaignId: 'recovered',
         campaignName: 'Campanha Recuperada',
         candidateName: e.to?.[0] || '',
@@ -55,7 +77,7 @@ export async function GET(req: NextRequest) {
         email: e.to?.[0] || '',
         subject: e.subject || '(sem assunto)',
         body: '',
-        status: e.last_event === 'bounced' || e.last_event === 'complained' ? 'failed' : 'sent',
+        status: SUCCESS_EVENTS.has(e.last_event) ? 'sent' : 'failed',
         sentAt: e.created_at || new Date().toISOString(),
       }))
 

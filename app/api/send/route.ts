@@ -23,10 +23,10 @@ const RESEND_ERROR_MAP: Record<string, string> = {
 export async function POST(req: NextRequest) {
   if (!validateApiKey(req)) return unauthorizedResponse()
 
-  // Rate limit: 60 requests per minute globally
+  // Rate limit: 300 requests per minute globally (Resend paid plans support 100/sec)
   const { allowed: globalAllowed, remaining: globalRemaining } = checkRateLimit(
     'send-global',
-    60,
+    300,
     60_000
   )
   if (!globalAllowed) {
@@ -106,18 +106,6 @@ export async function POST(req: NextRequest) {
         alreadySent: true,
         sentAt: existing.sentAt,
       })
-    }
-  }
-
-  // Anti-spam: max 1 send to same email per day (per campaign)
-  if (campaignId && to) {
-    const dailyKey = `daily::${campaignId}::${to.toLowerCase()}::${new Date().toISOString().slice(0, 10)}`
-    const { allowed: dailyOk } = checkRateLimit(dailyKey, 1, 24 * 60 * 60 * 1000)
-    if (!dailyOk) {
-      return NextResponse.json(
-        { success: false, error: 'Este e-mail já foi enviado hoje para este destinatário nesta campanha.' },
-        { status: 429 }
-      )
     }
   }
 
