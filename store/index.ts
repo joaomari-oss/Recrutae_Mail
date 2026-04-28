@@ -41,12 +41,95 @@ interface AppStore {
   getActiveCampaign: () => Campaign | null
 }
 
+/**
+ * localStorage wrapper that catches QuotaExceededError so it never crashes the app.
+ * On quota overflow it tries an emergency trim (strip bodies from sent data) and retries.
+ * If the retry still fails the write is silently dropped — the in-memory Zustand state
+ * remains correct for the current session; only persistence to disk is lost.
+ */
 const safeStorage = () => {
-  if (typeof window !== 'undefined') return localStorage
+  if (typeof window === 'undefined') {
+    return {
+      getItem: (_name: string): string | null => null,
+      setItem: (_name: string, _value: string): void => {},
+      removeItem: (_name: string): void => {},
+    }
+  }
+
   return {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
+    getItem: (name: string): string | null => {
+      try {
+        return localStorage.getItem(name)
+      } catch {
+        return null
+      }
+    },
+
+    setItem: (name: string, value: string): void => {
+      try {
+        localStorage.setItem(name, value)
+      } catch (e) {
+        const isQuota =
+          e instanceof DOMException &&
+          (e.name === 'QuotaExceededError' ||
+            e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+            e.code === 22)
+
+        if (!isQuota) return // unexpected error — drop silently
+
+        // Emergency trim: strip bodies from the payload and retry once
+        try {
+          const parsed: { state?: Record<string, unknown> } = JSON.parse(value)
+          if (parsed?.state) {
+            // Keep only last 50 sentEmails and strip their bodies
+            const se = parsed.state.sentEmails as Array<Record<string, unknown>> | undefined
+            if (Array.isArray(se)) {
+              parsed.state.sentEmails = se
+                .slice(0, 50)
+                .map((e) => ({ ...e, body: '' }))
+            }
+
+            // Strip generated/edited bodies from every sent or failed candidate
+            const byC = parsed.state.candidatesByCampaign as
+              | Record<string, Array<Record<string, unknown>>>
+              | undefined
+            if (byC) {
+              for (const cid of Object.keys(byC)) {
+                byC[cid] = byC[cid].map((c) =>
+                  c.status === 'sent' || c.status === 'failed'
+                    ? {
+                        ...c,
+                        generatedBody: '',
+                        editedBody: '',
+                        generatedSubject: '',
+                        editedSubject: '',
+                      }
+                    : c
+                )
+              }
+            }
+
+            localStorage.setItem(name, JSON.stringify(parsed))
+            return
+          }
+        } catch {
+          // Emergency trim failed — fall through to warning
+        }
+
+        // Could not persist — in-memory state is still valid for this session
+        console.warn(
+          '[storage] localStorage quota exceeded — state kept in memory only for this session'
+        )
+      }
+    },
+
+    removeItem: (name: string): void => {
+      try {
+        localStorage.removeItem(name)
+      } catch {
+        // ignore
+      }
+    },
   }
 }
 
@@ -299,6 +382,33 @@ export const useAppStore = create<AppStore>()(
     {
       name: 'recrutae-v2',
       storage: createJSONStorage(safeStorage),
+      /**
+       * Reduce what lands in localStorage:
+       * - Sent candidates have their email bodies stripped (the same data
+       *   already lives in sentEmails, so nothing is truly lost).
+       * - sentEmails is capped at 200 entries in storage (full list stays
+       *   in memory for the current session; older history is in Resend).
+       */
+      partialize: (state) => ({
+        ...state,
+        candidatesByCampaign: Object.fromEntries(
+          Object.entries(state.candidatesByCampaign).map(([cId, cands]) => [
+            cId,
+            cands.map((c) =>
+              c.status === 'sent'
+                ? {
+                    ...c,
+                    generatedBody: '',
+                    editedBody: '',
+                    generatedSubject: '',
+                    editedSubject: '',
+                  }
+                : c
+            ),
+          ])
+        ),
+        sentEmails: state.sentEmails.slice(0, 200),
+      }),
     }
   )
 )

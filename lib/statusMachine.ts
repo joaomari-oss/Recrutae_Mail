@@ -7,11 +7,11 @@ import { CandidateStatus } from '@/lib/types'
 const VALID_TRANSITIONS: Record<CandidateStatus, CandidateStatus[]> = {
   pending:    ['generating', 'failed'],
   generating: ['ready', 'failed'],
-  ready:      ['approved', 'pending'],    // pending = regenerate
-  approved:   ['sending', 'ready'],       // ready = unapprove
+  ready:      ['approved', 'pending', 'failed'],  // failed = error during generation/review
+  approved:   ['sending', 'ready'],               // ready = unapprove
   sending:    ['sent', 'failed'],
-  sent:       [],                          // terminal — NEVER reverts
-  failed:     ['pending', 'approved'],    // retry or direct approve
+  sent:       [],                                  // terminal — NEVER reverts
+  failed:     ['pending', 'approved'],            // retry or direct approve
 }
 
 export function canTransition(from: CandidateStatus, to: CandidateStatus): boolean {

@@ -274,7 +274,7 @@ async function generateWithOpenAI(
 export async function POST(req: NextRequest) {
   if (!validateApiKey(req)) return unauthorizedResponse()
 
-  const { allowed } = checkRateLimit('generate-global', 30, 60_000)
+  const { allowed } = checkRateLimit('generate-global', 200, 60_000)
   if (!allowed) {
     return NextResponse.json(
       { error: 'Rate limit excedido. Aguarde um momento antes de gerar mais emails.' },

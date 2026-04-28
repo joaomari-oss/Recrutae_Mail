@@ -109,12 +109,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Global daily cap
+  // Global daily cap — set high to avoid blocking large campaigns on warm serverless instances
   const globalDailyKey = `global-daily::${new Date().toISOString().slice(0, 10)}`
-  const { allowed: globalDailyOk } = checkRateLimit(globalDailyKey, 500, 24 * 60 * 60 * 1000)
+  const { allowed: globalDailyOk } = checkRateLimit(globalDailyKey, 10_000, 24 * 60 * 60 * 1000)
   if (!globalDailyOk) {
     return NextResponse.json(
-      { success: false, error: 'Limite diário global de envios atingido (500/dia).' },
+      { success: false, error: 'Limite diário global de envios atingido (10.000/dia).' },
       { status: 429 }
     )
   }
