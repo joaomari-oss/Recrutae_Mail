@@ -1,0 +1,291 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useClientStore } from '@/store/clientStore'
+import { ClientContact, ClientCampaignConfig, CLIENT_SEGMENTS } from '@/lib/clientTypes'
+import { ArrowRight, Mail, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Building2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { saveCampaignToSupabase } from '@/lib/supabaseOps'
+import { isSupabaseConfigured } from '@/lib/supabase'
+
+export default function ClientsComposePage() {
+  const router = useRouter()
+  const { createCampaign } = useClientStore()
+
+  const [contacts, setContacts] = useState<ClientContact[]>([])
+  const [campaignName, setCampaignName] = useState('')
+  const [recruiterName, setRecruiterName] = useState('')
+  const [recruiterEmail, setRecruiterEmail] = useState('')
+  const [selectedSegment, setSelectedSegment] = useState('')
+  const [keyPoints, setKeyPoints] = useState('')
+  const [segmentSearch, setSegmentSearch] = useState('')
+  const [segmentOpen, setSegmentOpen] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem('client-pending-contacts')
+    if (!stored) { router.replace('/clients'); return }
+    setContacts(JSON.parse(stored))
+  }, [router])
+
+  const emailValid = recruiterEmail.toLowerCase().endsWith('@recrutae.com.br')
+
+  const filteredSegments = CLIENT_SEGMENTS.filter((s) =>
+    s.toLowerCase().includes(segmentSearch.toLowerCase())
+  )
+
+  const validate = () => {
+    const errs: Record<string, string> = {}
+    if (!campaignName.trim()) errs.campaignName = 'Nome da campanha obrigatório.'
+    if (!recruiterName.trim()) errs.recruiterName = 'Seu nome é obrigatório.'
+    if (!recruiterEmail.trim()) errs.recruiterEmail = 'E-mail obrigatório.'
+    else if (!emailValid) errs.recruiterEmail = 'E-mail deve ser @recrutae.com.br'
+    if (!selectedSegment) errs.segment = 'Selecione um segmento.'
+    return errs
+  }
+
+  const handleContinue = () => {
+    const errs = validate()
+    if (Object.keys(errs).length) { setErrors(errs); return }
+
+    const config: ClientCampaignConfig = {
+      recruiterName: recruiterName.trim(),
+      recruiterEmail: recruiterEmail.trim().toLowerCase(),
+      segment: selectedSegment,
+      keyPoints: keyPoints.trim(),
+    }
+
+    const id = createCampaign(campaignName.trim(), contacts, config)
+    sessionStorage.removeItem('client-pending-contacts')
+
+    // Persist to Supabase in background (non-blocking)
+    if (isSupabaseConfigured()) {
+      const campaign = {
+        id,
+        name: campaignName.trim(),
+        createdAt: new Date().toISOString(),
+        status: 'draft' as const,
+        segment: config.segment,
+        totalContacts: contacts.length,
+        approvedCount: 0,
+        sentCount: 0,
+        failedCount: 0,
+      }
+      saveCampaignToSupabase(campaign, contacts, config).catch(console.error)
+    }
+
+    router.push('/clients/review')
+  }
+
+  return (
+    <main className="min-h-full bg-brand-dark px-6 py-10 relative overflow-hidden">
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute top-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-brand-coral/4 blur-[120px]" />
+      </div>
+
+      <div className="relative max-w-xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="space-y-1 animate-fade-up">
+          <h1 className="text-3xl font-display font-bold text-brand-white">
+            Configurar e-mail
+          </h1>
+          <p className="text-brand-muted text-sm">
+            {contacts.length} contato{contacts.length !== 1 ? 's' : ''} selecionado{contacts.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+
+        <div className="space-y-5 animate-fade-up stagger-1" style={{ animationFillMode: 'forwards' }}>
+          {/* Campaign name */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              Nome da campanha <span className="text-brand-coral">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: Prospecção Digital Platforms — Maio 2026"
+              value={campaignName}
+              onChange={(e) => { setCampaignName(e.target.value); setErrors((p) => ({ ...p, campaignName: '' })) }}
+              className={cn(
+                'w-full px-4 py-3 rounded-lg border text-sm text-brand-white',
+                'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
+                errors.campaignName ? 'border-brand-error/50' : 'border-white/10 focus:border-brand-coral/50'
+              )}
+            />
+            {errors.campaignName && <p className="text-xs text-brand-error">{errors.campaignName}</p>}
+          </div>
+
+          {/* Recruiter name */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              Seu nome (aparece no e-mail) <span className="text-brand-coral">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: Leandro Mari"
+              value={recruiterName}
+              onChange={(e) => { setRecruiterName(e.target.value); setErrors((p) => ({ ...p, recruiterName: '' })) }}
+              className={cn(
+                'w-full px-4 py-3 rounded-lg border text-sm text-brand-white',
+                'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
+                errors.recruiterName ? 'border-brand-error/50' : 'border-white/10 focus:border-brand-coral/50'
+              )}
+            />
+            {errors.recruiterName && <p className="text-xs text-brand-error">{errors.recruiterName}</p>}
+          </div>
+
+          {/* Recruiter email */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              Seu e-mail <span className="text-brand-coral">*</span>
+              <span className="ml-2 text-xs text-brand-muted/60">(obrigatoriamente @recrutae.com.br)</span>
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-muted/60" />
+              <input
+                type="email"
+                placeholder="seu.nome@recrutae.com.br"
+                value={recruiterEmail}
+                onChange={(e) => { setRecruiterEmail(e.target.value); setErrors((p) => ({ ...p, recruiterEmail: '' })) }}
+                className={cn(
+                  'w-full pl-10 pr-10 py-3 rounded-lg border text-sm text-brand-white',
+                  'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
+                  errors.recruiterEmail ? 'border-brand-error/50'
+                    : emailValid && recruiterEmail ? 'border-brand-success/50'
+                    : 'border-white/10 focus:border-brand-coral/50'
+                )}
+              />
+              {emailValid && recruiterEmail && (
+                <CheckCircle2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-success" />
+              )}
+              {recruiterEmail && !emailValid && (
+                <AlertCircle className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-error" />
+              )}
+            </div>
+            {errors.recruiterEmail && <p className="text-xs text-brand-error">{errors.recruiterEmail}</p>}
+            {!errors.recruiterEmail && emailValid && recruiterEmail && (
+              <p className="text-xs text-brand-success">As respostas chegarão neste e-mail.</p>
+            )}
+          </div>
+
+          {/* Segment */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              Segmento das empresas <span className="text-brand-coral">*</span>
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setSegmentOpen(!segmentOpen)}
+                className={cn(
+                  'w-full flex items-center justify-between px-4 py-3 rounded-lg border text-sm transition-colors',
+                  'bg-brand-charcoal outline-none',
+                  errors.segment ? 'border-brand-error/50'
+                    : segmentOpen ? 'border-brand-coral/50'
+                    : 'border-white/10 hover:border-brand-coral/30',
+                  selectedSegment ? 'text-brand-white' : 'text-brand-muted/60'
+                )}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Building2 className="h-4 w-4 text-brand-muted/60 flex-shrink-0" />
+                  <span className="truncate">{selectedSegment || 'Selecione o segmento…'}</span>
+                </div>
+                {segmentOpen ? <ChevronUp className="h-4 w-4 text-brand-muted/60 flex-shrink-0" /> : <ChevronDown className="h-4 w-4 text-brand-muted/60 flex-shrink-0" />}
+              </button>
+
+              {segmentOpen && (
+                <div className="absolute z-50 left-0 right-0 mt-1 bg-brand-charcoal border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-fade-in">
+                  <div className="p-2 border-b border-white/5">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-brand-muted/60" />
+                      <input
+                        type="text"
+                        placeholder="Buscar segmento…"
+                        value={segmentSearch}
+                        onChange={(e) => setSegmentSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 bg-brand-dark border border-white/8 rounded-lg text-sm text-brand-white placeholder:text-brand-muted/40 outline-none focus:border-brand-coral/30 transition-colors"
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  <div className="overflow-y-auto max-h-56 p-1.5">
+                    {filteredSegments.length === 0 ? (
+                      <p className="text-center text-xs text-brand-muted py-4">Nenhum segmento encontrado.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-0.5">
+                        {filteredSegments.map((seg) => (
+                          <button
+                            key={seg}
+                            type="button"
+                            onClick={() => {
+                              setSelectedSegment(seg)
+                              setSegmentOpen(false)
+                              setSegmentSearch('')
+                              setErrors((p) => ({ ...p, segment: '' }))
+                            }}
+                            className={cn(
+                              'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                              selectedSegment === seg
+                                ? 'bg-brand-coral/15 text-brand-coral font-medium'
+                                : 'text-brand-muted hover:text-brand-white hover:bg-white/5'
+                            )}
+                          >
+                            {seg}
+                            {selectedSegment === seg && <CheckCircle2 className="inline ml-2 h-3.5 w-3.5" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            {errors.segment && <p className="text-xs text-brand-error">{errors.segment}</p>}
+          </div>
+
+          {/* Key points */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              Pontos-chave para o e-mail
+              <span className="ml-2 text-xs text-brand-muted/50">(opcional)</span>
+            </label>
+            <textarea
+              rows={5}
+              placeholder={`Ex: Mencionar que temos foco em empresas de SaaS e entregamos em 5 dias úteis.\nCitar que Julia Mello da Find HR indicou nosso contato.\nDestacar o Status Report em tempo real.`}
+              value={keyPoints}
+              onChange={(e) => setKeyPoints(e.target.value)}
+              className={cn(
+                'w-full px-4 py-3 rounded-lg border text-sm text-brand-white resize-none',
+                'bg-brand-charcoal border-white/10 focus:border-brand-coral/50',
+                'outline-none transition-colors placeholder:text-brand-muted/40 leading-relaxed'
+              )}
+            />
+            <p className="text-xs text-brand-muted/50">
+              A IA usará esses pontos para personalizar cada e-mail. Quanto mais específico, melhor.
+            </p>
+          </div>
+
+          {/* Info banner */}
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-brand-charcoal border border-white/5">
+            <Mail className="h-5 w-5 text-brand-coral flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-brand-muted leading-relaxed">
+              Os e-mails serão enviados <strong className="text-brand-white">do seu @recrutae.com.br</strong> e as respostas chegarão diretamente na sua caixa de entrada. Cada e-mail é único — gerado individualmente pela IA para cada contato.
+            </div>
+          </div>
+        </div>
+
+        {/* CTA */}
+        <button
+          onClick={handleContinue}
+          className="btn-coral w-full flex items-center justify-center gap-3 py-4 text-base font-semibold animate-fade-up stagger-2"
+          style={{ animationFillMode: 'forwards' }}
+        >
+          Gerar e-mails com IA
+          <ArrowRight className="h-5 w-5" />
+        </button>
+      </div>
+    </main>
+  )
+}
