@@ -7,39 +7,31 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 // In-memory idempotency registry: campaignId+contactEmail → messageId
 const sentRegistry = new Map<string, string>()
 
-function bodyToHtml(body: string): string {
-  const escaped = body
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+function bodyToHtml(body: string, replyToEmail: string): string {
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-  const lines = escaped.split('\n')
-  const htmlLines = lines.map((line) => {
-    const trimmed = line.trim()
-    if (trimmed.startsWith('→') || trimmed.startsWith('-&gt;')) {
-      const text = trimmed.replace(/^→|-&gt;/, '').trim()
-      return `<p style="margin:6px 0 6px 12px;color:#1a1a2e;">• ${text}</p>`
-    }
-    // Make LinkedIn / http URLs clickable
-    const linkedUrl = trimmed.replace(
+  const htmlLines = body.split('\n').map((line) => {
+    const safe = escapeHtml(line)
+    const trimmed = safe.trim()
+    if (trimmed === '') return '<p style="margin:0 0 10px 0;">&nbsp;</p>'
+    // Make http URLs clickable
+    const linked = trimmed.replace(
       /(https?:\/\/[^\s<]+)/g,
-      '<a href="$1" style="color:#F26A4F;text-decoration:none;">$1</a>'
+      '<a href="$1" style="color:#1a1a2e;">$1</a>'
     )
-    if (trimmed === '') return '<p style="margin:0 0 6px 0;">&nbsp;</p>'
-    return `<p style="margin:8px 0;color:#1a1a2e;">${linkedUrl}</p>`
+    return `<p style="margin:0 0 10px 0;">${linked}</p>`
   })
 
+  // Minimal HTML — no background, no wrapper divs, looks like a personal email
   return `<!DOCTYPE html>
-<html lang="pt-BR" xmlns="http://www.w3.org/1999/xhtml">
+<html lang="pt-BR">
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="x-apple-disable-message-reformatting" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 </head>
-<body style="margin:0;padding:0;background-color:#ffffff;">
-  <div style="max-width:600px;padding:24px 20px;font-family:'Georgia',serif;font-size:15px;line-height:1.75;color:#1a1a2e;">
+<body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#1a1a2e;margin:0;padding:20px;">
 ${htmlLines.join('\n')}
-  </div>
 </body>
 </html>`
 }
@@ -81,11 +73,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
       from: fromAddress,
       to: [to],
       subject,
-      html: bodyToHtml(emailBody),
+      html: bodyToHtml(emailBody, replyTo?.trim() || recruiterEmail),
       text: emailBody,
       reply_to: replyTo?.trim() || recruiterEmail,
       headers: {
-        'X-Entity-Ref-ID': `${campaignId ?? 'client'}-${Date.now()}`,
+        'List-Unsubscribe': `<mailto:${replyTo?.trim() || recruiterEmail}?subject=unsubscribe>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        'X-Entity-Ref-ID': `${campaignId ?? 'client'}-${contactEmail ?? ''}-${Date.now()}`,
       },
     })
 

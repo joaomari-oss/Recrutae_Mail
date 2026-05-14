@@ -119,6 +119,13 @@ ANTI-SPAM (MUITO IMPORTANTE):
 - Construa credibilidade: cite a empresa com naturalidade, nao de forma promocional
 - A saudacao "Olá, {firstName}!" adiciona legitimidade (emails spammers usam "Prezado(a)" ou "Caro(a)")
 
+REGRAS DO ASSUNTO (CRITICAS PARA NAO CAI EM SPAM):
+- NUNCA comece o assunto com palavras como: "Oportunidade", "Vaga", "Oferta", "Urgente", "Exclusivo"
+- Prefira assuntos curtos, conversacionais e curiosos como: "Posição em {empresa}", "{cargo} — {empresa}", "Uma posição para você"
+- Maximo 55 caracteres
+- Sem emojis, sem CAPS LOCK, sem pontos de exclamacao no assunto
+- O assunto deve parecer que foi escrito por uma pessoa, nao por um sistema automatizado
+
 REGRAS DO ASSUNTO (varie entre eles):
 - "{role} na {hiringCompany}"
 - "Oportunidade: {role} | {hiringCompany}"

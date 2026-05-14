@@ -121,30 +121,32 @@ export async function POST(req: NextRequest) {
 
   const resend = new Resend(apiKey)
 
-  const senderName = safeSenderName ? `${safeSenderName} - Recrutae Talent` : 'Recrutae Talent'
+  // Personal sender — no brand name to avoid bulk-mail signals
+  const senderName = safeSenderName || 'Recrutaê'
   const from = `${senderName} <${fromEmail}>`
+
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
   const htmlBody = emailBody
     .split('\n')
-    .map((line) =>
-      line.trim() === ''
-        ? '<p style="margin:0 0 12px 0;padding:0;">&nbsp;</p>'
-        : `<p style="margin:0 0 12px 0;padding:0;">${line}</p>`
-    )
+    .map((line) => {
+      const safe = escapeHtml(line)
+      return safe.trim() === ''
+        ? '<p style="margin:0 0 10px 0;">&nbsp;</p>'
+        : `<p style="margin:0 0 10px 0;">${safe}</p>`
+    })
     .join('')
 
+  // Minimal HTML — no wrapper divs, no background colors; looks like a real email
   const fullHtml = `<!DOCTYPE html>
-<html lang="pt-BR" xmlns="http://www.w3.org/1999/xhtml">
+<html lang="pt-BR">
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="x-apple-disable-message-reformatting" />
-  <title>${subject}</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 </head>
-<body style="margin:0;padding:0;background-color:#ffffff;">
-  <div style="max-width:600px;padding:24px 20px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#1a1a1a;">
-    ${htmlBody}
-  </div>
+<body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#1a1a1a;margin:0;padding:20px;">
+${htmlBody}
 </body>
 </html>`
 
@@ -159,8 +161,12 @@ export async function POST(req: NextRequest) {
       html: fullHtml,
       text: emailBody,
       ...(effectiveReplyTo ? { reply_to: effectiveReplyTo } : {}),
-      // Tag with campaignId so Resend webhooks can route email.opened events back to us
       ...(campaignId ? { tags: [{ name: 'campaign_id', value: campaignId }] } : {}),
+      headers: {
+        'List-Unsubscribe': `<mailto:${effectiveReplyTo || fromEmail}?subject=unsubscribe>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        'X-Entity-Ref-ID': `${campaignId ?? 'cand'}-${candidateEmail ?? ''}-${Date.now()}`,
+      },
     })
 
     if (error) {

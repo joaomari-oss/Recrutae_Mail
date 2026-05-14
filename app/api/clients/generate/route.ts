@@ -25,6 +25,15 @@ ANTI-SPAM (crítico):
 - Mantenha linguagem profissional e consultiva — nunca comercial agressiva
 - Não use múltiplos pontos de exclamação seguidos
 - Não use CAPS LOCK excessivo
+- Não use palavras de alarme: "urgente", "exclusivo", "imperdível", "promoção", "grátis"
+- O e-mail deve parecer escrito individualmente, não em massa
+
+REGRAS DO ASSUNTO (CRÍTICAS PARA NÃO CAIR EM SPAM):
+- NUNCA comece o assunto com: "Oportunidade", "Oferta", "Proposta", "Urgente", "Exclusivo", "Parceria"
+- Prefira assuntos curtos e naturais como: "{empresa} — uma conversa rápida", "Fala, {primeiro_nome}", "Ideia para {empresa}"
+- Máximo 55 caracteres
+- Sem emojis, sem CAPS LOCK, sem pontos de exclamação no assunto
+- O assunto deve parecer que foi escrito por uma pessoa, não por automação
 
 Retorne APENAS JSON válido no formato: { "subject": "...", "body": "..." }
 O body usa \\n para quebras de linha.`

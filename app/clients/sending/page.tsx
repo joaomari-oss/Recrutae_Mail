@@ -80,7 +80,7 @@ export default function ClientsSendingPage() {
           error_message: err instanceof Error ? err.message : 'Erro',
         }).catch(console.error)
       }
-      await delay(600)
+      await delay(1500)
     }
 
     const finalContacts = useClientStore.getState().contactsByCampaign[activeCampaignId] ?? []
