@@ -40,8 +40,10 @@ export type ClientCampaign = {
 
 export type ClientCampaignConfig = {
   recruiterName: string
-  recruiterEmail: string
-  /** E-mail pessoal do recrutador — usado como Reply-To nas respostas */
+  recruiterEmail: string  /** Cargo do recrutador — aparece na assinatura do email */
+  recruiterRole: string
+  /** LinkedIn do recrutador — aparece na assinatura do email */
+  recruiterLinkedin?: string  /** E-mail pessoal do recrutador — usado como Reply-To nas respostas */
   replyTo: string
   segment: string
   keyPoints: string
@@ -80,6 +82,10 @@ export type GenerateClientEmailRequest = {
   contact: ClientContact
   recruiterName: string
   recruiterEmail: string
+  /** Cargo do recrutador */
+  recruiterRole?: string
+  /** LinkedIn do recrutador */
+  recruiterLinkedin?: string
   segment: string
   keyPoints: string
   aiProvider?: 'openai' | 'groq'

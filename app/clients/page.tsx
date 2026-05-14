@@ -22,6 +22,26 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import Papa from 'papaparse'
+import * as XLSX from 'xlsx'
+
+function rowToContact(row: Record<string, string>, idx: number): ClientContact {
+  const firstName = row['First Name'] || row['first_name'] || row['Nome'] || row['name'] || ''
+  const lastName  = row['Last Name']  || row['last_name']  || row['Sobrenome'] || ''
+  const fullName  = `${firstName} ${lastName}`.trim() || row['Full Name'] || row['full_name'] || firstName
+  const email     = row['Email']   || row['email']   || row['E-mail'] || ''
+  const company   = row['Company'] || row['company'] || row['Empresa'] || row['Account Name'] || ''
+  const position  = row['Title']   || row['title']   || row['Cargo']  || row['Job Title'] || ''
+  return {
+    id: `contact-${idx}-${Date.now()}`,
+    firstName, lastName,
+    fullName: fullName || email.split('@')[0],
+    email, company, position,
+    status: 'pending' as const,
+    generatedSubject: '', generatedBody: '',
+    editedSubject: '', editedBody: '',
+    sendAttempts: 0,
+  }
+}
 
 function parseClientCSV(file: File): Promise<ClientContact[]> {
   return new Promise((resolve, reject) => {
@@ -31,37 +51,35 @@ function parseClientCSV(file: File): Promise<ClientContact[]> {
       complete: (results) => {
         const rows = results.data as Record<string, string>[]
         if (!rows.length) { reject(new Error('CSV vazio ou sem dados.')); return }
-
-        const contacts: ClientContact[] = rows.map((row, idx) => {
-          const firstName = row['First Name'] || row['first_name'] || row['Nome'] || row['name'] || ''
-          const lastName = row['Last Name'] || row['last_name'] || row['Sobrenome'] || ''
-          const fullName = `${firstName} ${lastName}`.trim() || row['Full Name'] || row['full_name'] || firstName
-          const email = row['Email'] || row['email'] || row['E-mail'] || ''
-          const company = row['Company'] || row['company'] || row['Empresa'] || row['Account Name'] || ''
-          const position = row['Title'] || row['title'] || row['Cargo'] || row['Job Title'] || ''
-
-          return {
-            id: `contact-${idx}-${Date.now()}`,
-            firstName,
-            lastName,
-            fullName: fullName || email.split('@')[0],
-            email,
-            company,
-            position,
-            status: 'pending' as const,
-            generatedSubject: '',
-            generatedBody: '',
-            editedSubject: '',
-            editedBody: '',
-            sendAttempts: 0,
-          }
-        }).filter((c) => c.email && c.email.includes('@'))
-
+        const contacts = rows.map((r, i) => rowToContact(r, i)).filter((c) => c.email && c.email.includes('@'))
         if (!contacts.length) { reject(new Error('Nenhum contato com e-mail válido encontrado.')); return }
         resolve(contacts)
       },
       error: (err) => reject(new Error(`Erro ao parsear CSV: ${err.message}`)),
     })
+  })
+}
+
+function parseClientExcel(file: File): Promise<ClientContact[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        const sheetName = workbook.SheetNames[0]
+        if (!sheetName) { reject(new Error('Planilha vazia.')); return }
+        const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' })
+        if (!rows.length) { reject(new Error('Nenhuma linha encontrada na planilha.')); return }
+        const contacts = rows.map((r, i) => rowToContact(r, i)).filter((c) => c.email && c.email.includes('@'))
+        if (!contacts.length) { reject(new Error('Nenhum contato com e-mail válido encontrado.')); return }
+        resolve(contacts)
+      } catch (err) {
+        reject(new Error(`Erro ao ler planilha: ${err instanceof Error ? err.message : 'desconhecido'}`))
+      }
+    }
+    reader.onerror = () => reject(new Error('Erro ao ler o arquivo.'))
+    reader.readAsArrayBuffer(file)
   })
 }
 
@@ -102,10 +120,11 @@ export default function ClientsPage() {
     setCsvContacts([])
     setCsvFileName(file.name)
     try {
-      const contacts = await parseClientCSV(file)
+      const isExcel = /\.(xlsx|xls)$/i.test(file.name)
+      const contacts = isExcel ? await parseClientExcel(file) : await parseClientCSV(file)
       setCsvContacts(contacts)
     } catch (err) {
-      setCsvError(err instanceof Error ? err.message : 'Erro ao processar CSV.')
+      setCsvError(err instanceof Error ? err.message : 'Erro ao processar arquivo.')
       setCsvFileName(null)
     } finally {
       setCsvLoading(false)
@@ -114,7 +133,12 @@ export default function ClientsPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'text/csv': ['.csv'], 'application/vnd.ms-excel': ['.csv'], 'text/plain': ['.csv'] },
+    accept: {
+      'text/csv': ['.csv'],
+      'application/vnd.ms-excel': ['.csv', '.xls'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'text/plain': ['.csv'],
+    },
     multiple: false,
     disabled: csvLoading,
   })
@@ -196,7 +220,7 @@ export default function ClientsPage() {
               )}
             >
               {m === 'csv' ? <FileText className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-              {m === 'csv' ? 'Importar CSV' : 'Adicionar manualmente'}
+              {m === 'csv' ? 'Importar CSV / Excel' : 'Adicionar manualmente'}
             </button>
           ))}
         </div>
@@ -237,10 +261,10 @@ export default function ClientsPage() {
                     <FileText className="h-7 w-7 text-brand-muted" />
                   </div>
                   <div>
-                    <p className="text-brand-white font-semibold">Arraste seu CSV de contatos</p>
+                    <p className="text-brand-white font-semibold">Arraste seu arquivo de contatos</p>
                     <p className="text-brand-muted text-sm mt-1">ou <span className="text-brand-coral underline underline-offset-2">clique para selecionar</span></p>
                   </div>
-                  <p className="text-xs text-brand-muted/60">Colunas: First Name, Email, Company, Title</p>
+                  <p className="text-xs text-brand-muted/60">Formatos aceitos: .csv, .xlsx, .xls &nbsp;|&nbsp; Colunas: First Name, Email, Company, Title</p>
                 </div>
               )}
             </div>

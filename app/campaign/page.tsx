@@ -125,6 +125,7 @@ export default function CampaignPage() {
     recruiterName:      existingConfig?.recruiterName ?? '',
     recruiterCompany:   existingConfig?.recruiterCompany ?? '',
     recruiterLinkedin:  existingConfig?.recruiterLinkedin ?? '',
+    recruiterRole:      existingConfig?.recruiterRole ?? '',
     replyTo:            existingConfig?.replyTo ?? '',
     aiProvider:         existingConfig?.aiProvider ?? 'openai',
   })
@@ -364,6 +365,19 @@ export default function CampaignPage() {
                 placeholder="https://linkedin.com/in/anasilva"
                 value={form.recruiterLinkedin}
                 onChange={(e) => update('recruiterLinkedin', e.target.value)}
+                className={inputCls(false, true)}
+              />
+            </Field>
+
+            <Field id="recruiterRole" label="Seu cargo" optional icon={<Briefcase className="h-4 w-4" />}
+              hint="Aparece na assinatura do e-mail. Ex: Head of Business, Talent Acquisition."
+            >
+              <input
+                id="recruiterRole"
+                type="text"
+                placeholder="Head of Business"
+                value={form.recruiterRole ?? ''}
+                onChange={(e) => update('recruiterRole', e.target.value)}
                 className={inputCls(false, true)}
               />
             </Field>

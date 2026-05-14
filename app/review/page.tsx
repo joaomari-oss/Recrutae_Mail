@@ -87,6 +87,7 @@ export default function ReviewPage() {
               recruiterName: campaignConfig.recruiterName,
               recruiterCompany: campaignConfig.recruiterCompany,
               recruiterLinkedin: campaignConfig.recruiterLinkedin,
+              recruiterRole: campaignConfig.recruiterRole,
               aiProvider: currentProvider,
             }),
           })
@@ -116,6 +117,7 @@ export default function ReviewPage() {
                     recruiterName: campaignConfig.recruiterName,
                     recruiterCompany: campaignConfig.recruiterCompany,
                     recruiterLinkedin: campaignConfig.recruiterLinkedin,
+                    recruiterRole: campaignConfig.recruiterRole,
                     aiProvider: altProvider,
                   }),
                 })
@@ -219,6 +221,7 @@ export default function ReviewPage() {
         recruiterName: campaignConfig.recruiterName,
         recruiterCompany: campaignConfig.recruiterCompany,
         recruiterLinkedin: campaignConfig.recruiterLinkedin,
+        recruiterRole: campaignConfig.recruiterRole,
         aiProvider: campaignConfig.aiProvider,
       }),
     })

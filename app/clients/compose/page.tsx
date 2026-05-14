@@ -20,6 +20,8 @@ export default function ClientsComposePage() {
   const [recruiterEmail, setRecruiterEmail] = useState('')
   const [replyTo, setReplyTo] = useState('')
   const [replyToMode, setReplyToMode] = useState<'same' | 'custom'>('same')
+  const [recruiterRole, setRecruiterRole] = useState('')
+  const [recruiterLinkedin, setRecruiterLinkedin] = useState('')
   const [selectedSegment, setSelectedSegment] = useState('')
   const [keyPoints, setKeyPoints] = useState('')
   const [segmentSearch, setSegmentSearch] = useState('')
@@ -46,6 +48,7 @@ export default function ClientsComposePage() {
     if (!recruiterName.trim()) errs.recruiterName = 'Seu nome é obrigatório.'
     if (!recruiterEmail.trim()) errs.recruiterEmail = 'E-mail obrigatório.'
     else if (!emailValid) errs.recruiterEmail = 'E-mail deve ser @recrutae.com.br'
+    if (!recruiterRole.trim()) errs.recruiterRole = 'Seu cargo é obrigatório.'
     if (replyToMode === 'custom') {
       if (!replyTo.trim()) errs.replyTo = 'E-mail para respostas é obrigatório.'
       else if (!replyToValid) errs.replyTo = 'Formato de e-mail inválido.'
@@ -61,6 +64,8 @@ export default function ClientsComposePage() {
     const config: ClientCampaignConfig = {
       recruiterName: recruiterName.trim(),
       recruiterEmail: recruiterEmail.trim().toLowerCase(),
+      recruiterRole: recruiterRole.trim(),
+      recruiterLinkedin: recruiterLinkedin.trim() || undefined,
       replyTo: replyTo.trim().toLowerCase(),
       segment: selectedSegment,
       keyPoints: keyPoints.trim(),
@@ -173,6 +178,44 @@ export default function ClientsComposePage() {
               )}
             </div>
             {errors.recruiterEmail && <p className="text-xs text-brand-error">{errors.recruiterEmail}</p>}
+          </div>
+
+          {/* Recruiter role */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              Seu cargo <span className="text-brand-coral">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: Head of Business, Talent Partner"
+              value={recruiterRole}
+              onChange={(e) => { setRecruiterRole(e.target.value); setErrors((p) => ({ ...p, recruiterRole: '' })) }}
+              className={cn(
+                'w-full px-4 py-3 rounded-lg border text-sm text-brand-white',
+                'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
+                errors.recruiterRole ? 'border-brand-error/50' : 'border-white/10 focus:border-brand-coral/50'
+              )}
+            />
+            {errors.recruiterRole && <p className="text-xs text-brand-error">{errors.recruiterRole}</p>}
+          </div>
+
+          {/* Recruiter LinkedIn */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              Seu LinkedIn
+              <span className="ml-2 text-xs text-brand-muted/50">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="https://linkedin.com/in/seu-perfil"
+              value={recruiterLinkedin}
+              onChange={(e) => setRecruiterLinkedin(e.target.value)}
+              className={cn(
+                'w-full px-4 py-3 rounded-lg border text-sm text-brand-white',
+                'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
+                'border-white/10 focus:border-brand-coral/50'
+              )}
+            />
           </div>
 
           {/* Reply-To destination */}

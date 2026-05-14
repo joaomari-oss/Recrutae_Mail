@@ -33,6 +33,13 @@ ESTRUTURA DO EMAIL (siga esta ordem exata):
 8. CTA suave
 9. Assinatura
 
+9. Assinatura OBRIGATORIA (sempre ao final):
+   "Abraços,"
+   [linha em branco]
+   {recruiterName}
+   {recruiterRole (se fornecido)}
+   {recruiterLinkedin (se fornecido)}
+
 REGRA CRITICA DE SAUDACAO:
 - A PRIMEIRA LINHA do email DEVE ser SEMPRE: "Olá, {firstName}!"
 - Use EXATAMENTE "Olá" (com acento no a) seguido de virgula, espaco, o primeiro nome do candidato e ponto de exclamacao.
@@ -132,7 +139,15 @@ function buildUserPrompt(
   jobDescription: string,
   link: string | undefined,
   recruiterName: string,
+  recruiterRole?: string,
+  recruiterLinkedin?: string,
 ): string {
+  const signatureLines = [
+    recruiterName,
+    recruiterRole || '',
+    recruiterLinkedin || '',
+  ].filter(Boolean).join('\n')
+
   return `Gere um email de abordagem de recrutamento para este candidato:
 
 firstName: ${firstName}
@@ -141,10 +156,17 @@ hiringCompany: ${hiringCompany}
 jobDescription: ${jobDescription}
 link: ${link || 'nenhum'}
 recruiterName: ${recruiterName}
+recruiterRole: ${recruiterRole || 'não informado'}
+recruiterLinkedin: ${recruiterLinkedin || 'nenhum'}
 
-IMPORTANTE: A oportunidade e na "${hiringCompany}". Use "${hiringCompany}" como nome da empresa no email e no assunto. NAO use o nome da empresa do recrutador.
+IMPORTANTE: A oportunidade é na "${hiringCompany}". Use "${hiringCompany}" como nome da empresa no email e no assunto. NAO use o nome da empresa do recrutador.
 
 REGRA CRITICA: O body DEVE comecar EXATAMENTE com "Olá, ${firstName}!" (com acento no a, virgula, nome e exclamacao).
+
+ASSINATURA OBRIGATORIA: O email DEVE terminar com:
+Abraços,
+
+${signatureLines}
 
 Retorne apenas o JSON com os campos "subject" e "body". Escreva inteiramente em portugues brasileiro com acentos corretos.`
 }
@@ -289,7 +311,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Corpo da requisicao invalido.' }, { status: 400 })
   }
 
-  const { candidate, role, jobDescription, link, hiringCompany, recruiterName, aiProvider } = body
+  const { candidate, role, jobDescription, link, hiringCompany, recruiterName, recruiterRole, recruiterLinkedin, aiProvider } = body
 
   if (!candidate || !role || !jobDescription || !recruiterName || !hiringCompany) {
     return NextResponse.json({ error: 'Dados obrigatorios ausentes.' }, { status: 400 })
@@ -304,6 +326,8 @@ export async function POST(req: NextRequest) {
     jobDescription,
     link,
     recruiterName,
+    recruiterRole,
+    recruiterLinkedin,
   )
 
   try {

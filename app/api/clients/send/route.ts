@@ -16,23 +16,30 @@ function bodyToHtml(body: string): string {
   const lines = escaped.split('\n')
   const htmlLines = lines.map((line) => {
     const trimmed = line.trim()
-    if (trimmed.startsWith('→')) {
-      return `<p style="margin:6px 0 6px 12px;color:#1a1a2e;">• ${trimmed.slice(1).trim()}</p>`
+    if (trimmed.startsWith('→') || trimmed.startsWith('-&gt;')) {
+      const text = trimmed.replace(/^→|-&gt;/, '').trim()
+      return `<p style="margin:6px 0 6px 12px;color:#1a1a2e;">• ${text}</p>`
     }
-    if (trimmed === '') return '<br/>'
-    return `<p style="margin:8px 0;color:#1a1a2e;">${trimmed}</p>`
+    // Make LinkedIn / http URLs clickable
+    const linkedUrl = trimmed.replace(
+      /(https?:\/\/[^\s<]+)/g,
+      '<a href="$1" style="color:#F26A4F;text-decoration:none;">$1</a>'
+    )
+    if (trimmed === '') return '<p style="margin:0 0 6px 0;">&nbsp;</p>'
+    return `<p style="margin:8px 0;color:#1a1a2e;">${linkedUrl}</p>`
   })
 
   return `<!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
 </head>
-<body style="font-family:'Georgia',serif;font-size:15px;line-height:1.75;color:#1a1a2e;background:#ffffff;max-width:620px;margin:0 auto;padding:32px 24px;">
-<div style="margin-bottom:32px;">
+<body style="margin:0;padding:0;background-color:#ffffff;">
+  <div style="max-width:600px;padding:24px 20px;font-family:'Georgia',serif;font-size:15px;line-height:1.75;color:#1a1a2e;">
 ${htmlLines.join('\n')}
-</div>
+  </div>
 </body>
 </html>`
 }

@@ -54,6 +54,8 @@ export type CampaignConfig = {
   recruiterName: string
   recruiterCompany: string
   recruiterLinkedin: string
+  /** Cargo do recrutador — aparece na assinatura do email */
+  recruiterRole?: string
   /** Email pessoal do recrutador — usado como Reply-To em todos os emails da campanha */
   replyTo: string
   aiProvider: AIProvider
@@ -96,6 +98,8 @@ export type GenerateEmailRequest = {
   recruiterName: string
   recruiterCompany: string
   recruiterLinkedin: string
+  /** Cargo do recrutador — aparece na assinatura */
+  recruiterRole?: string
   aiProvider?: AIProvider
 }
 
