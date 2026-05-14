@@ -314,7 +314,7 @@ export default function SendingPage() {
         setFailedCount(failed)
       }
 
-      if (!abortRef.current) await delay(500)
+      if (!abortRef.current) await delay(1200)
     }
 
     // Release lock and clean up heartbeat

@@ -126,14 +126,25 @@ export async function POST(req: NextRequest) {
 
   const htmlBody = emailBody
     .split('\n')
-    .map((line) => (line.trim() === '' ? '<br>' : `<p>${line}</p>`))
+    .map((line) =>
+      line.trim() === ''
+        ? '<p style="margin:0 0 12px 0;padding:0;">&nbsp;</p>'
+        : `<p style="margin:0 0 12px 0;padding:0;">${line}</p>`
+    )
     .join('')
 
   const fullHtml = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: sans-serif; font-size: 14px; line-height: 1.6; color: #222;">
-${htmlBody}
+<html lang="pt-BR" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <title>${subject}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#ffffff;">
+  <div style="max-width:600px;padding:24px 20px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#1a1a1a;">
+    ${htmlBody}
+  </div>
 </body>
 </html>`
 
