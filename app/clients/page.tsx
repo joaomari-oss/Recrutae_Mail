@@ -24,35 +24,109 @@ import { toast } from 'sonner'
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 
-function rowToContact(row: Record<string, string>, idx: number): ClientContact {
-  const firstName = row['First Name'] || row['first_name'] || row['Nome'] || row['name'] || ''
-  const lastName  = row['Last Name']  || row['last_name']  || row['Sobrenome'] || ''
-  const fullName  = `${firstName} ${lastName}`.trim() || row['Full Name'] || row['full_name'] || firstName
-  const email     = row['Email']   || row['email']   || row['E-mail'] || ''
-  const company   = row['Company'] || row['company'] || row['Empresa'] || row['Account Name'] || ''
-  const position  = row['Title']   || row['title']   || row['Cargo']  || row['Job Title'] || ''
-  return {
-    id: `contact-${idx}-${Date.now()}`,
-    firstName, lastName,
-    fullName: fullName || email.split('@')[0],
-    email, company, position,
-    status: 'pending' as const,
-    generatedSubject: '', generatedBody: '',
-    editedSubject: '', editedBody: '',
-    sendAttempts: 0,
+/** Case-insensitive column lookup — finds first key that matches any of the given patterns */
+function col(row: Record<string, string>, ...patterns: string[]): string {
+  const keys = Object.keys(row)
+  for (const pat of patterns) {
+    const normalPat = pat.toLowerCase().trim()
+    const found = keys.find((k) => k.toLowerCase().trim() === normalPat)
+    if (found && row[found]) return row[found].toString().trim()
   }
+  for (const pat of patterns) {
+    const normalPat = pat.toLowerCase().trim()
+    const found = keys.find((k) => k.toLowerCase().trim().includes(normalPat))
+    if (found && row[found]) return row[found].toString().trim()
+  }
+  return ''
+}
+
+/**
+ * Parses a 2D array of strings (raw rows) into ClientContact[].
+ * Automatically detects:
+ *  - Header row present → uses col() to map by name (case-insensitive)
+ *  - No header row      → positional mapping: finds email column by @, name before it, rest = company/title
+ */
+function parseRawRows(allRows: string[][]): ClientContact[] {
+  if (!allRows.length) return []
+
+  // Find which column most often contains an email address
+  const maxCols = Math.max(...allRows.map((r) => r.length))
+  const emailScores = Array(maxCols).fill(0)
+  for (const row of allRows) {
+    for (let i = 0; i < row.length; i++) {
+      const v = String(row[i] ?? '').trim()
+      if (v.includes('@') && v.includes('.')) emailScores[i]++
+    }
+  }
+  const emailColIdx = emailScores.indexOf(Math.max(...emailScores))
+  if (emailScores[emailColIdx] === 0) return []
+
+  // Is first row a header? Its email-column cell won't look like an email
+  const hasHeader = !String(allRows[0][emailColIdx] ?? '').trim().includes('@')
+
+  const headers = hasHeader ? allRows[0].map((h) => String(h ?? '').trim()) : []
+  const dataRows = hasHeader ? allRows.slice(1) : allRows
+
+  return dataRows
+    .map((row, idx) => {
+      let email = '', fullName = '', firstName = '', lastName = '', company = '', position = ''
+
+      if (hasHeader) {
+        const obj: Record<string, string> = {}
+        headers.forEach((h, i) => { obj[h] = String(row[i] ?? '').trim() })
+        email     = col(obj, 'Email', 'E-mail', 'email', 'e_mail', 'Work Email', 'Corporate Email', 'Business Email')
+        firstName = col(obj, 'First Name', 'first_name', 'firstname', 'Nome', 'first', 'name')
+        lastName  = col(obj, 'Last Name',  'last_name',  'lastname',  'Sobrenome', 'last')
+        fullName  = `${firstName} ${lastName}`.trim()
+          || col(obj, 'Full Name', 'full_name', 'fullname', 'Nome Completo', 'Contact Name', 'Name')
+        company   = col(obj, 'Company', 'company', 'Empresa', 'Account Name', 'Organization', 'employer')
+        position  = col(obj, 'Title', 'title', 'Cargo', 'Job Title', 'Position', 'Role', 'ocupacao')
+      } else {
+        // Positional: email at emailColIdx
+        email = String(row[emailColIdx] ?? '').trim()
+        // Name: column immediately before email, or first non-email column
+        const nameIdx = emailColIdx > 0 ? emailColIdx - 1 : row.findIndex((_, i) => i !== emailColIdx)
+        fullName  = nameIdx >= 0 ? String(row[nameIdx] ?? '').trim() : ''
+        firstName = fullName.split(' ')[0] || ''
+        lastName  = fullName.split(' ').slice(1).join(' ')
+        // Remaining columns (not email, not name) → company, then position
+        const rest = row
+          .map((v, i) => ({ v: String(v ?? '').trim(), i }))
+          .filter(({ v, i }) => i !== emailColIdx && i !== nameIdx && v)
+        company  = rest[0]?.v || ''
+        position = rest[1]?.v || ''
+      }
+
+      return {
+        id: `contact-${idx}-${Date.now()}`,
+        firstName,
+        lastName,
+        fullName: fullName || email.split('@')[0],
+        email,
+        company,
+        position,
+        status: 'pending' as const,
+        generatedSubject: '', generatedBody: '',
+        editedSubject: '', editedBody: '',
+        sendAttempts: 0,
+      }
+    })
+    .filter((c) => c.email && c.email.includes('@'))
 }
 
 function parseClientCSV(file: File): Promise<ClientContact[]> {
   return new Promise((resolve, reject) => {
     Papa.parse(file, {
-      header: true,
+      header: false,
       skipEmptyLines: true,
       complete: (results) => {
-        const rows = results.data as Record<string, string>[]
-        if (!rows.length) { reject(new Error('CSV vazio ou sem dados.')); return }
-        const contacts = rows.map((r, i) => rowToContact(r, i)).filter((c) => c.email && c.email.includes('@'))
-        if (!contacts.length) { reject(new Error('Nenhum contato com e-mail válido encontrado.')); return }
+        const rawRows = (results.data as unknown[][]).map((r) => (r as unknown[]).map((v) => String(v ?? '')))
+        if (!rawRows.length) { reject(new Error('CSV vazio ou sem dados.')); return }
+        const contacts = parseRawRows(rawRows)
+        if (!contacts.length) {
+          reject(new Error(`Nenhum e-mail válido encontrado. Primeira linha: ${rawRows[0]?.join(', ') || '(vazia)'}`))
+          return
+        }
         resolve(contacts)
       },
       error: (err) => reject(new Error(`Erro ao parsear CSV: ${err.message}`)),
@@ -69,10 +143,13 @@ function parseClientExcel(file: File): Promise<ClientContact[]> {
         const workbook = XLSX.read(data, { type: 'array' })
         const sheetName = workbook.SheetNames[0]
         if (!sheetName) { reject(new Error('Planilha vazia.')); return }
-        const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' })
-        if (!rows.length) { reject(new Error('Nenhuma linha encontrada na planilha.')); return }
-        const contacts = rows.map((r, i) => rowToContact(r, i)).filter((c) => c.email && c.email.includes('@'))
-        if (!contacts.length) { reject(new Error('Nenhum contato com e-mail válido encontrado.')); return }
+        const rawRows: string[][] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' })
+        if (!rawRows.length) { reject(new Error('Nenhuma linha encontrada na planilha.')); return }
+        const contacts = parseRawRows(rawRows)
+        if (!contacts.length) {
+          reject(new Error(`Nenhum e-mail válido encontrado. Primeira linha: ${rawRows[0]?.join(', ') || '(vazia)'}`))
+          return
+        }
         resolve(contacts)
       } catch (err) {
         reject(new Error(`Erro ao ler planilha: ${err instanceof Error ? err.message : 'desconhecido'}`))
@@ -109,6 +186,20 @@ export default function ClientsPage() {
   const [csvError, setCsvError] = useState<string | null>(null)
   const [csvLoading, setCsvLoading] = useState(false)
   const [showAllTable, setShowAllTable] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<Partial<ClientContact>>({})
+
+  const startEdit = (c: ClientContact) => { setEditingId(c.id); setEditDraft({ fullName: c.fullName, email: c.email, company: c.company, position: c.position }) }
+  const cancelEdit = () => { setEditingId(null); setEditDraft({}) }
+  const saveEdit = (id: string) => {
+    setCsvContacts((prev) => prev.map((c) => {
+      if (c.id !== id) return c
+      const name = (editDraft.fullName ?? c.fullName).trim()
+      return { ...c, fullName: name, firstName: name.split(' ')[0] || '', lastName: name.split(' ').slice(1).join(' '), email: (editDraft.email ?? c.email).trim(), company: (editDraft.company ?? c.company).trim(), position: (editDraft.position ?? c.position).trim() }
+    }))
+    cancelEdit()
+  }
+  const removeCsvContact = (id: string) => setCsvContacts((prev) => prev.filter((c) => c.id !== id))
 
   const [manualContacts, setManualContacts] = useState<ManualContact[]>([emptyManual()])
 
@@ -278,23 +369,68 @@ export default function ClientsPage() {
 
             {csvContacts.length > 0 && (
               <div className="rounded-xl border border-white/5 overflow-hidden">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm table-fixed">
+                  <colgroup>
+                    <col className="w-[22%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[10%]" />
+                  </colgroup>
                   <thead>
                     <tr className="bg-brand-charcoal">
-                      {['Nome', 'Empresa', 'Cargo', 'Email'].map((h) => (
-                        <th key={h} className="text-left px-4 py-3 text-xs font-medium text-brand-muted uppercase tracking-widest">{h}</th>
+                      {['Nome', 'Empresa', 'Cargo', 'E-mail', ''].map((h, i) => (
+                        <th key={i} className="text-left px-4 py-3 text-xs font-medium text-brand-muted uppercase tracking-widest truncate">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {(showAllTable ? csvContacts : csvContacts.slice(0, 8)).map((c, i) => (
-                      <tr key={c.id} className="hover:bg-white/2 transition-colors animate-fade-up opacity-0" style={{ animationDelay: `${i * 25}ms`, animationFillMode: 'forwards' }}>
-                        <td className="px-4 py-3 font-medium text-brand-white">{c.fullName || '—'}</td>
-                        <td className="px-4 py-3 text-brand-muted">{c.company || '—'}</td>
-                        <td className="px-4 py-3 text-brand-muted">{c.position || '—'}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-brand-muted">{c.email}</td>
-                      </tr>
-                    ))}
+                    {(showAllTable ? csvContacts : csvContacts.slice(0, 8)).map((c, i) => {
+                      const isEditing = editingId === c.id
+                      return (
+                        <tr key={c.id} className={cn('transition-colors animate-fade-up opacity-0', isEditing ? 'bg-brand-charcoal/60' : 'hover:bg-white/2')} style={{ animationDelay: `${i * 25}ms`, animationFillMode: 'forwards' }}>
+                          {isEditing ? (
+                            <>
+                              <td className="px-2 py-2">
+                                <input autoFocus value={editDraft.fullName ?? ''} onChange={(e) => setEditDraft((d) => ({ ...d, fullName: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-brand-dark border border-brand-coral/40 text-sm text-brand-white outline-none" />
+                              </td>
+                              <td className="px-2 py-2">
+                                <input value={editDraft.company ?? ''} onChange={(e) => setEditDraft((d) => ({ ...d, company: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-brand-dark border border-white/10 text-sm text-brand-white outline-none" />
+                              </td>
+                              <td className="px-2 py-2">
+                                <input value={editDraft.position ?? ''} onChange={(e) => setEditDraft((d) => ({ ...d, position: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-brand-dark border border-white/10 text-sm text-brand-white outline-none" />
+                              </td>
+                              <td className="px-2 py-2">
+                                <input value={editDraft.email ?? ''} onChange={(e) => setEditDraft((d) => ({ ...d, email: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-brand-dark border border-white/10 text-sm font-mono text-brand-white outline-none" />
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="flex gap-1">
+                                  <button onClick={() => saveEdit(c.id)} className="px-2 py-1 rounded text-xs font-medium bg-brand-coral text-white hover:bg-brand-orange transition-colors">Salvar</button>
+                                  <button onClick={cancelEdit} className="px-2 py-1 rounded text-xs text-brand-muted hover:text-brand-white transition-colors">Cancelar</button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-3 font-medium text-brand-white truncate" title={c.fullName}>{c.fullName || '—'}</td>
+                              <td className="px-4 py-3 text-brand-muted truncate" title={c.company}>{c.company || '—'}</td>
+                              <td className="px-4 py-3 text-brand-muted truncate" title={c.position}>{c.position || '—'}</td>
+                              <td className="px-4 py-3 font-mono text-xs text-brand-muted truncate" title={c.email}>{c.email}</td>
+                              <td className="px-3 py-3">
+                                <div className="flex gap-1 justify-end">
+                                  <button onClick={() => startEdit(c)} title="Editar" className="p-1.5 rounded-lg text-brand-muted hover:text-brand-coral hover:bg-brand-coral/10 transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                  </button>
+                                  <button onClick={() => removeCsvContact(c.id)} title="Remover" className="p-1.5 rounded-lg text-brand-muted hover:text-brand-error hover:bg-brand-error/10 transition-colors">
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
                 {csvContacts.length > 8 && (
