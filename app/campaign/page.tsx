@@ -358,17 +358,6 @@ export default function CampaignPage() {
               </Field>
             </div>
 
-            <Field id="recruiterLinkedin" label="Seu LinkedIn" optional icon={<Linkedin className="h-4 w-4" />}>
-              <input
-                id="recruiterLinkedin"
-                type="text"
-                placeholder="https://linkedin.com/in/anasilva"
-                value={form.recruiterLinkedin}
-                onChange={(e) => update('recruiterLinkedin', e.target.value)}
-                className={inputCls(false, true)}
-              />
-            </Field>
-
             <Field id="recruiterRole" label="Seu cargo" optional icon={<Briefcase className="h-4 w-4" />}
               hint="Aparece na assinatura do e-mail. Ex: Head of Business, Talent Acquisition."
             >

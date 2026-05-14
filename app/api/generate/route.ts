@@ -38,7 +38,6 @@ ESTRUTURA DO EMAIL (siga esta ordem exata):
    [linha em branco]
    {recruiterName}
    {recruiterRole (se fornecido)}
-   {recruiterLinkedin (se fornecido)}
 
 REGRA CRITICA DE SAUDACAO:
 - A PRIMEIRA LINHA do email DEVE ser SEMPRE: "Olá, {firstName}!"
@@ -140,12 +139,10 @@ function buildUserPrompt(
   link: string | undefined,
   recruiterName: string,
   recruiterRole?: string,
-  recruiterLinkedin?: string,
 ): string {
   const signatureLines = [
     recruiterName,
     recruiterRole || '',
-    recruiterLinkedin || '',
   ].filter(Boolean).join('\n')
 
   return `Gere um email de abordagem de recrutamento para este candidato:
@@ -157,7 +154,6 @@ jobDescription: ${jobDescription}
 link: ${link || 'nenhum'}
 recruiterName: ${recruiterName}
 recruiterRole: ${recruiterRole || 'não informado'}
-recruiterLinkedin: ${recruiterLinkedin || 'nenhum'}
 
 IMPORTANTE: A oportunidade é na "${hiringCompany}". Use "${hiringCompany}" como nome da empresa no email e no assunto. NAO use o nome da empresa do recrutador.
 
@@ -311,7 +307,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Corpo da requisicao invalido.' }, { status: 400 })
   }
 
-  const { candidate, role, jobDescription, link, hiringCompany, recruiterName, recruiterRole, recruiterLinkedin, aiProvider } = body
+  const { candidate, role, jobDescription, link, hiringCompany, recruiterName, recruiterRole, aiProvider } = body
 
   if (!candidate || !role || !jobDescription || !recruiterName || !hiringCompany) {
     return NextResponse.json({ error: 'Dados obrigatorios ausentes.' }, { status: 400 })
@@ -327,7 +323,6 @@ export async function POST(req: NextRequest) {
     link,
     recruiterName,
     recruiterRole,
-    recruiterLinkedin,
   )
 
   try {

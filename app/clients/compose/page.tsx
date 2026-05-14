@@ -199,25 +199,6 @@ export default function ClientsComposePage() {
             {errors.recruiterRole && <p className="text-xs text-brand-error">{errors.recruiterRole}</p>}
           </div>
 
-          {/* Recruiter LinkedIn */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-brand-muted">
-              Seu LinkedIn
-              <span className="ml-2 text-xs text-brand-muted/50">(opcional)</span>
-            </label>
-            <input
-              type="text"
-              placeholder="https://linkedin.com/in/seu-perfil"
-              value={recruiterLinkedin}
-              onChange={(e) => setRecruiterLinkedin(e.target.value)}
-              className={cn(
-                'w-full px-4 py-3 rounded-lg border text-sm text-brand-white',
-                'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
-                'border-white/10 focus:border-brand-coral/50'
-              )}
-            />
-          </div>
-
           {/* Reply-To destination */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-brand-muted">

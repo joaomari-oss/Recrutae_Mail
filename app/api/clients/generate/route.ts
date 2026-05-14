@@ -61,13 +61,12 @@ O subject deve ser personalizado, direto e curto (máximo 60 caracteres). Não u
 }
 
 function buildUserPrompt(req: GenerateClientEmailRequest): string {
-  const { contact, recruiterName, recruiterRole, recruiterLinkedin, segment, keyPoints } = req
+  const { contact, recruiterName, recruiterRole, segment, keyPoints } = req
   const firstName = contact.firstName || contact.fullName.split(' ')[0] || 'pessoal'
 
   const signatureParts = [
     recruiterName,
     recruiterRole || '',
-    recruiterLinkedin || '',
   ].filter(Boolean).join('\n')
 
   return `Destinatário:
@@ -80,7 +79,6 @@ function buildUserPrompt(req: GenerateClientEmailRequest): string {
 Remetente (recrutador):
 - Nome: ${recruiterName}
 - Cargo: ${recruiterRole || 'não informado'}
-- LinkedIn: ${recruiterLinkedin || 'não informado'}
 
 Assinatura a usar exatamente no final do email:
 ${signatureParts}
@@ -94,7 +92,7 @@ Escreva um e-mail personalizado para esta pessoa, mencionando o segmento "${segm
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateClientEmailRequest = await request.json()
-    const { contact, recruiterName, recruiterEmail, recruiterRole, recruiterLinkedin, segment, keyPoints, aiProvider, variationSeed } = body
+    const { contact, recruiterName, recruiterEmail, recruiterRole, segment, keyPoints, aiProvider, variationSeed } = body
 
     if (!contact || !recruiterName || !segment) {
       return NextResponse.json({ error: 'Campos obrigatórios ausentes.' }, { status: 400 })
@@ -102,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     const seed = variationSeed ?? Math.floor(Math.random() * 1000)
     const systemPrompt = buildSystemPrompt(seed)
-    const userPrompt = buildUserPrompt({ contact, recruiterName, recruiterEmail, recruiterRole, recruiterLinkedin, segment, keyPoints, variationSeed: seed })
+    const userPrompt = buildUserPrompt({ contact, recruiterName, recruiterEmail, recruiterRole, segment, keyPoints, variationSeed: seed })
 
     const provider = aiProvider ?? 'openai'
 
