@@ -3,65 +3,35 @@ import OpenAI from 'openai'
 import Groq from 'groq-sdk'
 import { GenerateClientEmailRequest } from '@/lib/clientTypes'
 
-const VARIATION_OPENERS = [
-  'Estou entrando em contato porque',
-  'O motivo do meu contato é que',
-  'Resolvi chegar até você porque',
-  'Estou te escrevendo pois',
-  'Gostaria de me apresentar porque',
-]
-
-const VARIATION_CLOSINGS = [
-  'Quais horários ficam melhores para você nessa semana ou na próxima?',
-  'Teria 30 minutos nessa semana ou na próxima para uma conversa rápida?',
-  'Conseguimos agendar 30 minutos para nos apresentarmos?',
-  'Quando você teria disponibilidade para uma conversa de 30 minutos?',
-  'Podemos marcar uma agenda rápida de 30 minutos?',
-]
-
-function buildSystemPrompt(seed: number) {
-  const opener = VARIATION_OPENERS[seed % VARIATION_OPENERS.length]
-  const closing = VARIATION_CLOSINGS[seed % VARIATION_CLOSINGS.length]
-
-  return `Você é um especialista em prospecção B2B da Recrutaê, empresa de recrutamento digital brasileira.
-Escreva um e-mail de prospecção comercial em nome de um recrutador da Recrutaê para um potencial cliente empresarial.
+function buildSystemPrompt() {
+  return `Você é um motor de personalização de e-mails de prospecção B2B.
+Sua única função é adaptar um e-mail template escrito pelo recrutador para cada contato específico.
 
 REGRAS ABSOLUTAS:
-1. Escreva SEMPRE em português brasileiro formal mas cordial
-2. Comece SEMPRE com "Olá, {PRIMEIRO_NOME}!" — nunca outro saudação
-3. Use o opener sugerido de forma natural: "${opener}"
-4. Finalize SEMPRE com a pergunta: "${closing}"
-5. Máximo 340 palavras no corpo do e-mail
-6. NUNCA use palavras de spam: grátis, promoção, urgente, clique agora, oferta imperdível
-7. NUNCA use mais de 1 emoji e preferencialmente nenhum
-8. Personalize mencionando o nome da empresa e/ou cargo do destinatário naturalmente
-9. Use no máximo 4 bullet points com →
-10. Tom: profissional, consultivo, direto — nunca excessivamente comercial ou agressivo
+1. PRESERVE rigorosamente a estrutura, mensagem, tom e intenção do template original
+2. PERSONALIZE substituindo {{PRIMEIRO_NOME}} pelo primeiro nome do contato, {{EMPRESA}} pela empresa, {{CARGO}} pelo cargo — onde esses marcadores aparecerem
+3. Se o template não usa marcadores mas menciona "a empresa", "sua empresa" ou nomes genéricos, substitua naturalmente pelo nome real da empresa do contato
+4. Se o template começa com "Olá," sem nome, adicione o primeiro nome: "Olá, {primeiro_nome}!"
+5. Faça variações SUTIS de fraseado (10-15% do texto): troque conectores, reordene adjetivos, varie construção de frases — sem alterar o significado
+6. NUNCA adicione conteúdo, seções ou informações que não estão no template
+7. NUNCA remova partes do template original
+8. NUNCA use palavras de spam: grátis, promoção, urgente, clique agora, oferta imperdível, exclusivo, garantido
+9. A assinatura fornecida deve aparecer EXATAMENTE no final do body
+10. O subject deve refletir o tema do template, personalizado com o nome da empresa do contato se fizer sentido — máximo 60 caracteres, sem emojis
 
-ESTRUTURA (siga esta ordem):
-- Saudação (Olá, {PRIMEIRO_NOME}!)
-- 1-2 frases de contexto/apresentação usando o opener
-- Apresentação da Recrutaê e relevância para o segmento do cliente
-- 3-4 diferenciais com → (varie quais incluir e em que ordem)
-- Proposta de reunião com a pergunta de fechamento
-
-DIFERENCIAIS DA RECRUTAÊ (escolha 3-4 e varie a ordem):
-→ Short-list com os melhores candidatos em até 5 dias úteis — 4x mais rápido que o mercado
-→ Candidatos 2x mais qualificados: avaliação técnica, comportamental e de fit cultural antes de qualquer apresentação
-→ Status Report em tempo real — acompanhe o andamento sem precisar cobrar atualização
-→ Atendimento consultivo do início ao fim: não terceirizamos etapas
-→ Especialistas no segmento: entendemos o modelo de negócio e falamos a língua do setor
-→ Parceria com Find HR (executive search para C-level e diretorias) — cobertura completa de todos os níveis
-
-SOBRE A RECRUTAÊ: empresa de recrutamento digital especializada em processos de analista a gerência.
+ANTI-SPAM (crítico):
+- Cada email gerado deve ter variações visíveis em relação aos outros da campanha
+- Varie a primeira frase, os conectores e o penúltimo parágrafo
+- Mantenha linguagem profissional e consultiva — nunca comercial agressiva
+- Não use múltiplos pontos de exclamação seguidos
+- Não use CAPS LOCK excessivo
 
 Retorne APENAS JSON válido no formato: { "subject": "...", "body": "..." }
-O body usa \\n para quebras de linha e → para bullet points.
-O subject deve ser personalizado, direto e curto (máximo 60 caracteres). Não use emojis no subject.`
+O body usa \\n para quebras de linha.`
 }
 
 function buildUserPrompt(req: GenerateClientEmailRequest): string {
-  const { contact, recruiterName, recruiterRole, segment, keyPoints } = req
+  const { contact, recruiterName, recruiterRole, segment, emailTemplate, variationSeed } = req
   const firstName = contact.firstName || contact.fullName.split(' ')[0] || 'pessoal'
 
   const signatureParts = [
@@ -69,38 +39,46 @@ function buildUserPrompt(req: GenerateClientEmailRequest): string {
     recruiterRole || '',
   ].filter(Boolean).join('\n')
 
-  return `Destinatário:
-- Nome: ${contact.fullName}
+  // Subtle variation hint based on seed to help the model vary phrasing
+  const variationHints = [
+    'Varie especialmente a primeira frase após a saudação.',
+    'Varie especialmente os conectores entre parágrafos.',
+    'Varie especialmente o penúltimo parágrafo.',
+    'Varie especialmente a frase de fechamento antes da assinatura.',
+    'Varie especialmente a apresentação da empresa no segundo parágrafo.',
+  ]
+  const hint = variationHints[(variationSeed ?? 0) % variationHints.length]
+
+  return `TEMPLATE DE E-MAIL (escrito pelo recrutador):
+---
+${emailTemplate || '(template não fornecido)'}
+---
+
+CONTATO A PERSONALIZAR:
+- Nome completo: ${contact.fullName}
 - Primeiro nome: ${firstName}
-- Empresa: ${contact.company || 'a empresa'}
+- Empresa: ${contact.company || 'não informada'}
 - Cargo: ${contact.position || 'não informado'}
 - Segmento: ${segment}
 
-Remetente (recrutador):
-- Nome: ${recruiterName}
-- Cargo: ${recruiterRole || 'não informado'}
-
-Assinatura a usar exatamente no final do email:
+ASSINATURA OBRIGATÓRIA (use exatamente no final do body):
 ${signatureParts}
 
-Pontos-chave que o recrutador quer destacar:
-${keyPoints || 'Apresentar a Recrutaê e propor uma reunião de 30 minutos.'}
-
-Escreva um e-mail personalizado para esta pessoa, mencionando o segmento "${segment}" de forma relevante ao negócio dela.`
+INSTRUÇÃO: Adapte o template acima para este contato específico. Substitua marcadores e referências genéricas pelos dados reais. ${hint} Preserve a mensagem e estrutura originais.`
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateClientEmailRequest = await request.json()
-    const { contact, recruiterName, recruiterEmail, recruiterRole, segment, keyPoints, aiProvider, variationSeed } = body
+    const { contact, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, aiProvider, variationSeed } = body
 
-    if (!contact || !recruiterName || !segment) {
+    if (!contact || !recruiterName || !segment || !emailTemplate) {
       return NextResponse.json({ error: 'Campos obrigatórios ausentes.' }, { status: 400 })
     }
 
     const seed = variationSeed ?? Math.floor(Math.random() * 1000)
-    const systemPrompt = buildSystemPrompt(seed)
-    const userPrompt = buildUserPrompt({ contact, recruiterName, recruiterEmail, recruiterRole, segment, keyPoints, variationSeed: seed })
+    const systemPrompt = buildSystemPrompt()
+    const userPrompt = buildUserPrompt({ contact, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, variationSeed: seed })
 
     const provider = aiProvider ?? 'openai'
 
@@ -112,7 +90,7 @@ export async function POST(request: NextRequest) {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.85,
+        temperature: 0.75,
         max_tokens: 900,
         response_format: { type: 'json_object' },
       })

@@ -46,7 +46,7 @@ export type ClientCampaignConfig = {
   recruiterLinkedin?: string  /** E-mail pessoal do recrutador — usado como Reply-To nas respostas */
   replyTo: string
   segment: string
-  keyPoints: string
+  emailTemplate: string
 }
 
 export const CLIENT_SEGMENTS = [
@@ -87,7 +87,7 @@ export type GenerateClientEmailRequest = {
   /** LinkedIn do recrutador */
   recruiterLinkedin?: string
   segment: string
-  keyPoints: string
+  emailTemplate: string
   aiProvider?: 'openai' | 'groq'
   variationSeed?: number
 }

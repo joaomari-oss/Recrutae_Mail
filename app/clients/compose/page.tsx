@@ -23,7 +23,7 @@ export default function ClientsComposePage() {
   const [recruiterRole, setRecruiterRole] = useState('')
   const [recruiterLinkedin, setRecruiterLinkedin] = useState('')
   const [selectedSegment, setSelectedSegment] = useState('')
-  const [keyPoints, setKeyPoints] = useState('')
+  const [emailTemplate, setEmailTemplate] = useState('')
   const [segmentSearch, setSegmentSearch] = useState('')
   const [segmentOpen, setSegmentOpen] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -54,6 +54,7 @@ export default function ClientsComposePage() {
       else if (!replyToValid) errs.replyTo = 'Formato de e-mail inválido.'
     }
     if (!selectedSegment) errs.segment = 'Selecione um segmento.'
+    if (!emailTemplate.trim()) errs.emailTemplate = 'Escreva o template do e-mail.'
     return errs
   }
 
@@ -68,7 +69,7 @@ export default function ClientsComposePage() {
       recruiterLinkedin: recruiterLinkedin.trim() || undefined,
       replyTo: replyTo.trim().toLowerCase(),
       segment: selectedSegment,
-      keyPoints: keyPoints.trim(),
+      emailTemplate: emailTemplate.trim(),
     }
 
     const id = createCampaign(campaignName.trim(), contacts, config)
@@ -344,26 +345,29 @@ export default function ClientsComposePage() {
             {errors.segment && <p className="text-xs text-brand-error">{errors.segment}</p>}
           </div>
 
-          {/* Key points */}
+          {/* Email template */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-brand-muted">
-              Pontos-chave para o e-mail
-              <span className="ml-2 text-xs text-brand-muted/50">(opcional)</span>
+              Template do e-mail <span className="text-brand-coral">*</span>
             </label>
+            <p className="text-xs text-brand-muted/60 leading-relaxed">
+              Escreva o e-mail completo que você quer enviar. A IA vai personalizar o nome, empresa e cargo de cada contato, e fazer variações sutis para evitar spam. Use <code className="bg-white/5 px-1 rounded">{'{{PRIMEIRO_NOME}}'}</code>, <code className="bg-white/5 px-1 rounded">{'{{EMPRESA}}'}</code> e <code className="bg-white/5 px-1 rounded">{'{{CARGO}}'}</code> como marcadores opcionais.
+            </p>
             <textarea
-              rows={5}
-              placeholder={`Ex: Mencionar que temos foco em empresas de SaaS e entregamos em 5 dias úteis.\nCitar que Julia Mello da Find HR indicou nosso contato.\nDestacar o Status Report em tempo real.`}
-              value={keyPoints}
-              onChange={(e) => setKeyPoints(e.target.value)}
+              rows={12}
+              placeholder={`Olá, {{PRIMEIRO_NOME}}!\n\nEstou entrando em contato pois acredito que a Recrutaê pode ser uma parceira estratégica para a {{EMPRESA}}.\n\nSomos uma empresa de recrutamento digital especializada em processos de analista a gerência. Entregamos short-list com os melhores candidatos em até 5 dias úteis, com avaliação técnica, comportamental e de fit cultural.\n\nTeria 30 minutos nessa semana para uma conversa rápida?\n\nAbraços,\nLeandro Mari\nHead of Business`}
+              value={emailTemplate}
+              onChange={(e) => { setEmailTemplate(e.target.value); setErrors((p) => ({ ...p, emailTemplate: '' })) }}
               className={cn(
-                'w-full px-4 py-3 rounded-lg border text-sm text-brand-white resize-none',
-                'bg-brand-charcoal border-white/10 focus:border-brand-coral/50',
-                'outline-none transition-colors placeholder:text-brand-muted/40 leading-relaxed'
+                'w-full px-4 py-3 rounded-lg border text-sm text-brand-white resize-none font-mono',
+                'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/30 leading-relaxed',
+                errors.emailTemplate ? 'border-brand-error/50' : 'border-white/10 focus:border-brand-coral/50'
               )}
             />
-            <p className="text-xs text-brand-muted/50">
-              A IA usará esses pontos para personalizar cada e-mail. Quanto mais específico, melhor.
-            </p>
+            {errors.emailTemplate && <p className="text-xs text-brand-error">{errors.emailTemplate}</p>}
+            {emailTemplate.trim() && (
+              <p className="text-xs text-brand-muted/50">{emailTemplate.trim().split(/\s+/).length} palavras</p>
+            )}
           </div>
 
           {/* Info banner */}

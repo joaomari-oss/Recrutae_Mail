@@ -15,7 +15,7 @@ export async function saveCampaignToSupabase(
     recruiter_name: config.recruiterName,
     recruiter_email: config.recruiterEmail,
     segment: config.segment,
-    key_points: config.keyPoints || null,
+    key_points: config.emailTemplate || null,
     status: campaign.status,
     contact_count: contacts.length,
     sent_count: 0,
