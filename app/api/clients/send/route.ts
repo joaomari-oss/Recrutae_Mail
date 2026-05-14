@@ -44,7 +44,7 @@ function sanitizeName(name: string): string {
 export async function POST(request: NextRequest): Promise<NextResponse<SendClientEmailResponse>> {
   try {
     const body: SendClientEmailRequest = await request.json()
-    const { to, subject, body: emailBody, contactName, recruiterName, recruiterEmail, campaignId, contactEmail } = body
+    const { to, subject, body: emailBody, contactName, recruiterName, recruiterEmail, replyTo, campaignId, contactEmail } = body
 
     if (!to || !subject || !emailBody || !recruiterEmail) {
       return NextResponse.json({ success: false, error: 'Campos obrigatórios ausentes.' }, { status: 400 })
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
       subject,
       html: bodyToHtml(emailBody),
       text: emailBody,
-      reply_to: recruiterEmail,
+      reply_to: replyTo?.trim() || recruiterEmail,
       headers: {
         'X-Entity-Ref-ID': `${campaignId ?? 'client'}-${Date.now()}`,
       },

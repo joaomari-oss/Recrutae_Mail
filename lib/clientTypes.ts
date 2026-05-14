@@ -41,6 +41,8 @@ export type ClientCampaign = {
 export type ClientCampaignConfig = {
   recruiterName: string
   recruiterEmail: string
+  /** E-mail pessoal do recrutador — usado como Reply-To nas respostas */
+  replyTo: string
   segment: string
   keyPoints: string
 }
@@ -91,6 +93,8 @@ export type SendClientEmailRequest = {
   contactName: string
   recruiterName: string
   recruiterEmail: string
+  /** E-mail pessoal para Reply-To */
+  replyTo?: string
   campaignId?: string
   contactEmail?: string
 }

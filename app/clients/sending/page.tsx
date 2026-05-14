@@ -52,6 +52,7 @@ export default function ClientsSendingPage() {
             contactName: contact.fullName,
             recruiterName: config.recruiterName,
             recruiterEmail: config.recruiterEmail,
+            replyTo: config.replyTo,
             campaignId: activeCampaignId,
             contactEmail: contact.email,
           }),

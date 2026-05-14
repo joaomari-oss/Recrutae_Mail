@@ -18,6 +18,7 @@ export default function ClientsComposePage() {
   const [campaignName, setCampaignName] = useState('')
   const [recruiterName, setRecruiterName] = useState('')
   const [recruiterEmail, setRecruiterEmail] = useState('')
+  const [replyTo, setReplyTo] = useState('')
   const [selectedSegment, setSelectedSegment] = useState('')
   const [keyPoints, setKeyPoints] = useState('')
   const [segmentSearch, setSegmentSearch] = useState('')
@@ -36,12 +37,16 @@ export default function ClientsComposePage() {
     s.toLowerCase().includes(segmentSearch.toLowerCase())
   )
 
+  const replyToValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo)
+
   const validate = () => {
     const errs: Record<string, string> = {}
     if (!campaignName.trim()) errs.campaignName = 'Nome da campanha obrigatório.'
     if (!recruiterName.trim()) errs.recruiterName = 'Seu nome é obrigatório.'
     if (!recruiterEmail.trim()) errs.recruiterEmail = 'E-mail obrigatório.'
     else if (!emailValid) errs.recruiterEmail = 'E-mail deve ser @recrutae.com.br'
+    if (!replyTo.trim()) errs.replyTo = 'E-mail pessoal para respostas é obrigatório.'
+    else if (!replyToValid) errs.replyTo = 'Formato de e-mail inválido.'
     if (!selectedSegment) errs.segment = 'Selecione um segmento.'
     return errs
   }
@@ -53,6 +58,7 @@ export default function ClientsComposePage() {
     const config: ClientCampaignConfig = {
       recruiterName: recruiterName.trim(),
       recruiterEmail: recruiterEmail.trim().toLowerCase(),
+      replyTo: replyTo.trim().toLowerCase(),
       segment: selectedSegment,
       keyPoints: keyPoints.trim(),
     }
@@ -164,8 +170,38 @@ export default function ClientsComposePage() {
               )}
             </div>
             {errors.recruiterEmail && <p className="text-xs text-brand-error">{errors.recruiterEmail}</p>}
-            {!errors.recruiterEmail && emailValid && recruiterEmail && (
-              <p className="text-xs text-brand-success">As respostas chegarão neste e-mail.</p>
+          </div>
+
+          {/* Reply-To personal email */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              E-mail pessoal para receber respostas <span className="text-brand-coral">*</span>
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-muted/60" />
+              <input
+                type="email"
+                placeholder="seu.email@pessoal.com"
+                value={replyTo}
+                onChange={(e) => { setReplyTo(e.target.value); setErrors((p) => ({ ...p, replyTo: '' })) }}
+                className={cn(
+                  'w-full pl-10 pr-10 py-3 rounded-lg border text-sm text-brand-white',
+                  'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
+                  errors.replyTo ? 'border-brand-error/50'
+                    : replyToValid && replyTo ? 'border-brand-success/50'
+                    : 'border-white/10 focus:border-brand-coral/50'
+                )}
+              />
+              {replyToValid && replyTo && (
+                <CheckCircle2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-success" />
+              )}
+              {replyTo && !replyToValid && (
+                <AlertCircle className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-error" />
+              )}
+            </div>
+            {errors.replyTo && <p className="text-xs text-brand-error">{errors.replyTo}</p>}
+            {!errors.replyTo && replyToValid && replyTo && (
+              <p className="text-xs text-brand-success">As respostas dos clientes chegarão neste e-mail.</p>
             )}
           </div>
 
@@ -271,7 +307,7 @@ export default function ClientsComposePage() {
           <div className="flex items-start gap-3 p-4 rounded-xl bg-brand-charcoal border border-white/5">
             <Mail className="h-5 w-5 text-brand-coral flex-shrink-0 mt-0.5" />
             <div className="text-sm text-brand-muted leading-relaxed">
-              Os e-mails serão enviados <strong className="text-brand-white">do seu @recrutae.com.br</strong> e as respostas chegarão diretamente na sua caixa de entrada. Cada e-mail é único — gerado individualmente pela IA para cada contato.
+                Os e-mails são enviados <strong className="text-brand-white">do seu @recrutae.com.br</strong>. As respostas dos clientes chegarão no <strong className="text-brand-white">e-mail pessoal</strong> configurado acima. Cada e-mail é único — gerado individualmente pela IA.
             </div>
           </div>
         </div>
