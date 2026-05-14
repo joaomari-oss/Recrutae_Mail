@@ -54,6 +54,8 @@ export type CampaignConfig = {
   recruiterName: string
   recruiterCompany: string
   recruiterLinkedin: string
+  /** Email pessoal do recrutador — usado como Reply-To em todos os emails da campanha */
+  replyTo: string
   aiProvider: AIProvider
 }
 
@@ -73,6 +75,16 @@ export type SentEmail = {
   sentAt: string
   /** Session ID of the tab/browser that triggered the send */
   sentBySessionId?: string
+}
+
+/** Email open event received via Resend webhook and stored in Supabase */
+export type EmailOpenEvent = {
+  id: string
+  message_id: string
+  campaign_id: string | null
+  recipient_email: string | null
+  event_type: string
+  received_at: string
 }
 
 export type GenerateEmailRequest = {
@@ -100,6 +112,8 @@ export type SendEmailRequest = {
   body: string
   candidateName: string
   recruiterName?: string
+  /** Reply-To header — respostas do candidato vão para este email */
+  replyTo?: string
   /** Used server-side for idempotency — prevents duplicate sends */
   campaignId?: string
   /** Used server-side for idempotency — prevents duplicate sends */

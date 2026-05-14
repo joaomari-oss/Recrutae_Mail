@@ -16,6 +16,7 @@ import {
   Link,
   ArrowRight,
   Tag,
+  Mail,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -123,6 +124,7 @@ export default function CampaignPage() {
     recruiterName:      existingConfig?.recruiterName ?? '',
     recruiterCompany:   existingConfig?.recruiterCompany ?? '',
     recruiterLinkedin:  existingConfig?.recruiterLinkedin ?? '',
+    replyTo:            existingConfig?.replyTo ?? '',
     aiProvider:         existingConfig?.aiProvider ?? 'openai',
   })
 
@@ -131,6 +133,8 @@ export default function CampaignPage() {
   useEffect(() => {
     if (!activeCampaignId || candidates.length === 0) router.replace('/')
   }, [activeCampaignId, candidates.length, router])
+
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof CampaignConfig, string>> = {}
@@ -142,6 +146,8 @@ export default function CampaignPage() {
     else if (form.jobDescription.trim().length < 50) e.jobDescription = 'Forneça mais detalhes (mínimo 50 caracteres).'
     if (!form.recruiterName.trim()) e.recruiterName = 'Seu nome é obrigatório.'
     if (!form.recruiterCompany.trim()) e.recruiterCompany = 'Sua empresa é obrigatória.'
+    if (!form.replyTo.trim()) e.replyTo = 'Email para receber respostas é obrigatório.'
+    else if (!EMAIL_REGEX.test(form.replyTo.trim())) e.replyTo = 'Formato de email inválido.'
     setErrors(e)
     return Object.keys(e).length === 0 && !nErr
   }
@@ -353,6 +359,24 @@ export default function CampaignPage() {
                 value={form.recruiterLinkedin}
                 onChange={(e) => update('recruiterLinkedin', e.target.value)}
                 className={inputCls(false, true)}
+              />
+            </Field>
+
+            <Field
+              id="replyTo"
+              label="Seu email pessoal (para receber respostas)"
+              required
+              error={errors.replyTo}
+              icon={<Mail className="h-4 w-4" />}
+              hint="Quando o candidato clicar em Responder, a mensagem vai direto para este email."
+            >
+              <input
+                id="replyTo"
+                type="email"
+                placeholder="ana.silva@gmail.com"
+                value={form.replyTo}
+                onChange={(e) => update('replyTo', e.target.value)}
+                className={inputCls(!!errors.replyTo, true)}
               />
             </Field>
           </FormCard>

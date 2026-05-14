@@ -13,12 +13,14 @@ import {
 import { cn } from '@/lib/utils'
 import { getSessionId } from '@/lib/session'
 import { useTheme } from '@/lib/theme'
+import { useAppStore } from '@/store'
 
 type NavEntry = {
   href:  string
   label: string
   icon:  React.ComponentType<{ className?: string }>
   match: (p: string) => boolean
+  badge?: number
 }
 
 const candidateNavItems: NavEntry[] = [
@@ -58,6 +60,16 @@ export function Sidebar() {
   const bottomItems  = isClientMode ? clientBottomItems  : candidateBottomItems
   const { theme, toggleTheme } = useTheme()
 
+  // Unread notification count: open events since the user last visited /campaigns
+  const emailOpenEvents       = useAppStore((s) => s.emailOpenEvents)
+  const notificationsReadAt   = useAppStore((s) => s.notificationsReadAt)
+  const markNotificationsRead = useAppStore((s) => s.markNotificationsRead)
+  const candidatesByCampaign  = useAppStore((s) => s.candidatesByCampaign)
+
+  const unreadCount = emailOpenEvents.filter(
+    (e) => !notificationsReadAt || e.received_at > notificationsReadAt
+  ).length
+
   useEffect(() => { setSessionId(getSessionId()) }, [])
 
   const handleLogout = async () => {
@@ -70,10 +82,15 @@ export function Sidebar() {
   const NavItem = ({ item }: { item: NavEntry }) => {
     const Icon     = item.icon
     const isActive = item.match(pathname)
+    const badge    = item.badge
 
     return (
       <Link
         href={item.href}
+        onClick={() => {
+          // Mark notifications read when navigating to /campaigns
+          if (item.href === '/campaigns') markNotificationsRead()
+        }}
         className={cn(
           'group relative flex items-center gap-3 rounded-xl transition-all duration-200',
           collapsed ? 'justify-center p-2.5' : 'px-3 py-2.5',
@@ -98,15 +115,25 @@ export function Sidebar() {
         </div>
         {!collapsed && (
           <span className={cn(
-            'text-[13px] font-medium whitespace-nowrap transition-colors duration-200',
+            'flex-1 text-[13px] font-medium whitespace-nowrap transition-colors duration-200',
             isActive ? 'text-brand-white' : 'text-brand-muted group-hover:text-brand-white'
           )}>
             {item.label}
           </span>
         )}
+        {/* Badge — shown on collapsed and expanded states */}
+        {badge != null && badge > 0 && (
+          <span className={cn(
+            'flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center',
+            'bg-brand-coral text-white shadow-[0_0_8px_rgba(242,106,79,0.5)]',
+            collapsed && 'absolute top-1 right-1 min-w-[14px] h-[14px] text-[8px]'
+          )}>
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
         {collapsed && (
           <div className="pointer-events-none absolute left-full ml-3 px-3 py-1.5 bg-brand-surface border border-white/8 rounded-xl text-[12px] text-brand-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 shadow-xl">
-            {item.label}
+            {item.label}{badge != null && badge > 0 ? ` (${badge})` : ''}
           </div>
         )}
       </Link>
@@ -182,9 +209,11 @@ export function Sidebar() {
         )}
         {collapsed && <div className="my-3 mx-1 border-t border-white/[0.045]" />}
 
-        {bottomItems.map((item) => (
-          <NavItem key={item.href} item={item} />
-        ))}
+        {bottomItems.map((item) => {
+          // Attach unread badge to the candidate Campanhas item
+          const badge = !isClientMode && item.href === '/campaigns' ? unreadCount : undefined
+          return <NavItem key={item.href} item={{ ...item, badge }} />
+        })}
 
         <div className="my-2 mx-1 border-t border-white/[0.045]" />
 

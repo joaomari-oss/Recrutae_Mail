@@ -233,6 +233,7 @@ export default function SendingPage() {
               body:           fresh.editedBody || fresh.generatedBody,
               candidateName:  fresh.fullName,
               recruiterName:  config?.recruiterName,
+              replyTo:        config?.replyTo,
               campaignId,
               candidateEmail: fresh.email,
             }),

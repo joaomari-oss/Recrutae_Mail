@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { to, subject, body: emailBody, candidateName, recruiterName, campaignId, candidateEmail } = body
+  const { to, subject, body: emailBody, candidateName, recruiterName, replyTo, campaignId, candidateEmail } = body
 
   // Input validation
   if (!to || !subject || !emailBody) {
@@ -137,6 +137,9 @@ ${htmlBody}
 </body>
 </html>`
 
+  // reply_to: prefer body field, fall back to env var
+  const effectiveReplyTo = replyTo?.trim() || replyToEmail
+
   try {
     const { data, error } = await resend.emails.send({
       from,
@@ -144,7 +147,9 @@ ${htmlBody}
       subject,
       html: fullHtml,
       text: emailBody,
-      ...(replyToEmail ? { reply_to: replyToEmail } : {}),
+      ...(effectiveReplyTo ? { reply_to: effectiveReplyTo } : {}),
+      // Tag with campaignId so Resend webhooks can route email.opened events back to us
+      ...(campaignId ? { tags: [{ name: 'campaign_id', value: campaignId }] } : {}),
     })
 
     if (error) {

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { Candidate, Campaign, CampaignConfig, SentEmail } from '@/lib/types'
+import { Candidate, Campaign, CampaignConfig, SentEmail, EmailOpenEvent } from '@/lib/types'
 import { canTransition } from '@/lib/statusMachine'
 
 interface AppStore {
@@ -25,6 +25,13 @@ interface AppStore {
   // Sent emails
   addSentEmail: (email: SentEmail) => void
   setSentEmails: (emails: SentEmail[]) => void
+
+  // Email open notifications (from Resend webhooks)
+  emailOpenEvents: EmailOpenEvent[]
+  /** ISO string of when the user last acknowledged notifications */
+  notificationsReadAt: string | null
+  addEmailOpenEvents: (events: EmailOpenEvent[]) => void
+  markNotificationsRead: () => void
 
   // Helpers
   deleteCampaign: (id: string) => void
@@ -141,6 +148,8 @@ export const useAppStore = create<AppStore>()(
       candidatesByCampaign: {},
       campaignConfigById: {},
       sentEmails: [],
+      emailOpenEvents: [],
+      notificationsReadAt: null,
 
       createCampaign: (name, candidates) => {
         const id = `campaign-${crypto.randomUUID()}`
@@ -264,6 +273,19 @@ export const useAppStore = create<AppStore>()(
           const newEmails = emails.filter((e) => !existingIds.has(e.id))
           return { sentEmails: [...newEmails, ...state.sentEmails] }
         }),
+
+      addEmailOpenEvents: (events) =>
+        set((state) => {
+          const existingIds = new Set(state.emailOpenEvents.map((e) => e.id))
+          const newEvents = events.filter((e) => !existingIds.has(e.id))
+          if (newEvents.length === 0) return {}
+          // Keep latest 500 events to avoid localStorage bloat
+          const merged = [...newEvents, ...state.emailOpenEvents].slice(0, 500)
+          return { emailOpenEvents: merged }
+        }),
+
+      markNotificationsRead: () =>
+        set({ notificationsReadAt: new Date().toISOString() }),
 
       resetStuckCandidates: (campaignId) => {
         let count = 0

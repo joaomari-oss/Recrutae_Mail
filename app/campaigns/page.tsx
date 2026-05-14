@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store'
 import {
@@ -16,6 +16,7 @@ import {
   Pencil,
   Check,
   X,
+  MailOpen,
 } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { CampaignStatus } from '@/lib/types'
@@ -30,7 +31,14 @@ const STATUS_CONFIG: Record<CampaignStatus, { label: string; classes: string }> 
 
 export default function CampaignsPage() {
   const router  = useRouter()
-  const { campaigns, campaignConfigById, sentEmails, setActiveCampaign, deleteCampaign, reopenCampaign, updateCampaign } = useAppStore()
+  const {
+    campaigns, campaignConfigById, sentEmails,
+    setActiveCampaign, deleteCampaign, reopenCampaign, updateCampaign,
+    emailOpenEvents, markNotificationsRead, candidatesByCampaign,
+  } = useAppStore()
+
+  // Mark notifications as read when this page is opened
+  useEffect(() => { markNotificationsRead() }, [markNotificationsRead])
 
   const [editingId, setEditingId]     = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
@@ -55,6 +63,24 @@ export default function CampaignsPage() {
   const successRate  = totalSent + totalFailed > 0
     ? Math.round((totalSent / (totalSent + totalFailed)) * 100)
     : 0
+
+  // Group open events by campaign for quick lookup
+  const opensByCampaign: Record<string, { count: number; names: string[] }> = {}
+  for (const ev of emailOpenEvents) {
+    if (!ev.campaign_id) continue
+    if (!opensByCampaign[ev.campaign_id]) opensByCampaign[ev.campaign_id] = { count: 0, names: [] }
+    const cands = candidatesByCampaign[ev.campaign_id] ?? []
+    const match = cands.find(
+      (c) => c.resendMessageId === ev.message_id ||
+             c.email.toLowerCase() === (ev.recipient_email ?? '').toLowerCase()
+    )
+    opensByCampaign[ev.campaign_id].count++
+    if (match) {
+      const name = match.fullName || match.firstName || match.email
+      if (!opensByCampaign[ev.campaign_id].names.includes(name))
+        opensByCampaign[ev.campaign_id].names.push(name)
+    }
+  }
 
   const handleOpen = (id: string, status: CampaignStatus) => {
     setActiveCampaign(id)
@@ -136,7 +162,7 @@ export default function CampaignsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5 bg-brand-charcoal">
-                  {['Nome', 'Criado em', 'Status', 'Candidatos', 'Aprovados', 'Enviados', 'Ações'].map((h) => (
+                  {['Nome', 'Criado em', 'Status', 'Candidatos', 'Aprovados', 'Enviados', 'Aberturas', 'Ações'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-medium text-brand-muted uppercase tracking-widest">
                       {h}
                     </th>
@@ -229,6 +255,26 @@ export default function CampaignsPage() {
                       </td>
                       <td className="px-4 py-4">
                         <span className="font-medium text-brand-success">{c.sentCount || 0}</span>
+                      </td>
+                      {/* Aberturas column */}
+                      <td className="px-4 py-4">
+                        {(() => {
+                          const opens = opensByCampaign[c.id]
+                          if (!opens || opens.count === 0) {
+                            return <span className="text-brand-muted/40 text-xs">—</span>
+                          }
+                          const tooltipNames = opens.names.slice(0, 5).join(', ') +
+                            (opens.names.length > 5 ? ` +${opens.names.length - 5}` : '')
+                          return (
+                            <span
+                              title={tooltipNames || undefined}
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-brand-warning/12 text-brand-warning border border-brand-warning/25 cursor-default"
+                            >
+                              <MailOpen className="h-3 w-3" />
+                              {opens.count}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-1">
