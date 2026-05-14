@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useClientStore } from '@/store/clientStore'
 import { ClientContact, ClientCampaignConfig, CLIENT_SEGMENTS } from '@/lib/clientTypes'
-import { ArrowRight, Mail, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Building2 } from 'lucide-react'
+import { ArrowRight, Mail, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Building2, Reply } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { saveCampaignToSupabase } from '@/lib/supabaseOps'
@@ -19,6 +19,7 @@ export default function ClientsComposePage() {
   const [recruiterName, setRecruiterName] = useState('')
   const [recruiterEmail, setRecruiterEmail] = useState('')
   const [replyTo, setReplyTo] = useState('')
+  const [replyToMode, setReplyToMode] = useState<'same' | 'custom'>('same')
   const [selectedSegment, setSelectedSegment] = useState('')
   const [keyPoints, setKeyPoints] = useState('')
   const [segmentSearch, setSegmentSearch] = useState('')
@@ -45,8 +46,10 @@ export default function ClientsComposePage() {
     if (!recruiterName.trim()) errs.recruiterName = 'Seu nome é obrigatório.'
     if (!recruiterEmail.trim()) errs.recruiterEmail = 'E-mail obrigatório.'
     else if (!emailValid) errs.recruiterEmail = 'E-mail deve ser @recrutae.com.br'
-    if (!replyTo.trim()) errs.replyTo = 'E-mail pessoal para respostas é obrigatório.'
-    else if (!replyToValid) errs.replyTo = 'Formato de e-mail inválido.'
+    if (replyToMode === 'custom') {
+      if (!replyTo.trim()) errs.replyTo = 'E-mail para respostas é obrigatório.'
+      else if (!replyToValid) errs.replyTo = 'Formato de e-mail inválido.'
+    }
     if (!selectedSegment) errs.segment = 'Selecione um segmento.'
     return errs
   }
@@ -172,35 +175,71 @@ export default function ClientsComposePage() {
             {errors.recruiterEmail && <p className="text-xs text-brand-error">{errors.recruiterEmail}</p>}
           </div>
 
-          {/* Reply-To personal email */}
+          {/* Reply-To destination */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-brand-muted">
-              E-mail pessoal para receber respostas <span className="text-brand-coral">*</span>
+              Para onde vão as respostas? <span className="text-brand-coral">*</span>
             </label>
-            <div className="relative">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-muted/60" />
-              <input
-                type="email"
-                placeholder="seu.email@pessoal.com"
-                value={replyTo}
-                onChange={(e) => { setReplyTo(e.target.value); setErrors((p) => ({ ...p, replyTo: '' })) }}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => { setReplyToMode('same'); setReplyTo(''); setErrors((p) => ({ ...p, replyTo: '' })) }}
                 className={cn(
-                  'w-full pl-10 pr-10 py-3 rounded-lg border text-sm text-brand-white',
-                  'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
-                  errors.replyTo ? 'border-brand-error/50'
-                    : replyToValid && replyTo ? 'border-brand-success/50'
-                    : 'border-white/10 focus:border-brand-coral/50'
+                  'flex items-center gap-2.5 px-4 py-3 rounded-lg border text-sm transition-colors text-left',
+                  replyToMode === 'same'
+                    ? 'bg-brand-coral/10 border-brand-coral/50 text-brand-white'
+                    : 'bg-brand-charcoal border-white/10 text-brand-muted hover:border-white/20 hover:text-brand-white'
                 )}
-              />
-              {replyToValid && replyTo && (
-                <CheckCircle2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-success" />
-              )}
-              {replyTo && !replyToValid && (
-                <AlertCircle className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-error" />
-              )}
+              >
+                <Reply className="h-4 w-4 flex-shrink-0" />
+                <div>
+                  <div className="font-medium text-xs leading-tight">Mesmo e-mail de envio</div>
+                  <div className="text-xs text-brand-muted/60 mt-0.5">Responder volta para o remetente</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReplyToMode('custom')}
+                className={cn(
+                  'flex items-center gap-2.5 px-4 py-3 rounded-lg border text-sm transition-colors text-left',
+                  replyToMode === 'custom'
+                    ? 'bg-brand-coral/10 border-brand-coral/50 text-brand-white'
+                    : 'bg-brand-charcoal border-white/10 text-brand-muted hover:border-white/20 hover:text-brand-white'
+                )}
+              >
+                <Mail className="h-4 w-4 flex-shrink-0" />
+                <div>
+                  <div className="font-medium text-xs leading-tight">E-mail personalizado</div>
+                  <div className="text-xs text-brand-muted/60 mt-0.5">Responder vai para outro e-mail</div>
+                </div>
+              </button>
             </div>
+            {replyToMode === 'custom' && (
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-muted/60" />
+                <input
+                  type="email"
+                  placeholder="seu.email@pessoal.com"
+                  value={replyTo}
+                  onChange={(e) => { setReplyTo(e.target.value); setErrors((p) => ({ ...p, replyTo: '' })) }}
+                  className={cn(
+                    'w-full pl-10 pr-10 py-3 rounded-lg border text-sm text-brand-white',
+                    'bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40',
+                    errors.replyTo ? 'border-brand-error/50'
+                      : replyToValid && replyTo ? 'border-brand-success/50'
+                      : 'border-white/10 focus:border-brand-coral/50'
+                  )}
+                />
+                {replyToValid && replyTo && (
+                  <CheckCircle2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-success" />
+                )}
+                {replyTo && !replyToValid && (
+                  <AlertCircle className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-brand-error" />
+                )}
+              </div>
+            )}
             {errors.replyTo && <p className="text-xs text-brand-error">{errors.replyTo}</p>}
-            {!errors.replyTo && replyToValid && replyTo && (
+            {replyToMode === 'custom' && !errors.replyTo && replyToValid && replyTo && (
               <p className="text-xs text-brand-success">As respostas dos clientes chegarão neste e-mail.</p>
             )}
           </div>
@@ -307,7 +346,7 @@ export default function ClientsComposePage() {
           <div className="flex items-start gap-3 p-4 rounded-xl bg-brand-charcoal border border-white/5">
             <Mail className="h-5 w-5 text-brand-coral flex-shrink-0 mt-0.5" />
             <div className="text-sm text-brand-muted leading-relaxed">
-                Os e-mails são enviados <strong className="text-brand-white">do seu @recrutae.com.br</strong>. As respostas dos clientes chegarão no <strong className="text-brand-white">e-mail pessoal</strong> configurado acima. Cada e-mail é único — gerado individualmente pela IA.
+                Os e-mails são enviados <strong className="text-brand-white">do seu @recrutae.com.br</strong>. As respostas chegarão no <strong className="text-brand-white">destino escolhido acima</strong>. Cada e-mail é único — gerado individualmente pela IA.
             </div>
           </div>
         </div>

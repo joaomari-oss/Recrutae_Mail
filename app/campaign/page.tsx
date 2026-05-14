@@ -17,6 +17,7 @@ import {
   ArrowRight,
   Tag,
   Mail,
+  Reply,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -129,6 +130,9 @@ export default function CampaignPage() {
   })
 
   const [errors, setErrors] = useState<Partial<Record<keyof CampaignConfig, string>>>({})
+  const [replyToMode, setReplyToMode] = useState<'same' | 'custom'>(
+    existingConfig?.replyTo ? 'custom' : 'same'
+  )
 
   useEffect(() => {
     if (!activeCampaignId || candidates.length === 0) router.replace('/')
@@ -146,8 +150,10 @@ export default function CampaignPage() {
     else if (form.jobDescription.trim().length < 50) e.jobDescription = 'Forneça mais detalhes (mínimo 50 caracteres).'
     if (!form.recruiterName.trim()) e.recruiterName = 'Seu nome é obrigatório.'
     if (!form.recruiterCompany.trim()) e.recruiterCompany = 'Sua empresa é obrigatória.'
-    if (!form.replyTo.trim()) e.replyTo = 'Email para receber respostas é obrigatório.'
-    else if (!EMAIL_REGEX.test(form.replyTo.trim())) e.replyTo = 'Formato de email inválido.'
+    if (replyToMode === 'custom') {
+      if (!form.replyTo.trim()) e.replyTo = 'Email para receber respostas é obrigatório.'
+      else if (!EMAIL_REGEX.test(form.replyTo.trim())) e.replyTo = 'Formato de email inválido.'
+    }
     setErrors(e)
     return Object.keys(e).length === 0 && !nErr
   }
@@ -362,23 +368,61 @@ export default function CampaignPage() {
               />
             </Field>
 
-            <Field
-              id="replyTo"
-              label="Seu email pessoal (para receber respostas)"
-              required
-              error={errors.replyTo}
-              icon={<Mail className="h-4 w-4" />}
-              hint="Quando o candidato clicar em Responder, a mensagem vai direto para este email."
-            >
-              <input
-                id="replyTo"
-                type="email"
-                placeholder="ana.silva@gmail.com"
-                value={form.replyTo}
-                onChange={(e) => update('replyTo', e.target.value)}
-                className={inputCls(!!errors.replyTo, true)}
-              />
-            </Field>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-brand-muted">
+                Para onde vão as respostas? <span className="text-brand-coral">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setReplyToMode('same'); update('replyTo', '') }}
+                  className={cn(
+                    'flex items-center gap-2.5 px-4 py-3 rounded-lg border text-sm transition-colors text-left',
+                    replyToMode === 'same'
+                      ? 'bg-brand-coral/10 border-brand-coral/50 text-brand-white'
+                      : 'bg-brand-dark border-white/10 text-brand-muted hover:border-white/20 hover:text-brand-white'
+                  )}
+                >
+                  <Reply className="h-4 w-4 flex-shrink-0" />
+                  <div>
+                    <div className="font-medium text-xs leading-tight">Mesmo e-mail de envio</div>
+                    <div className="text-xs text-brand-muted/60 mt-0.5">Responder volta para o remetente</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReplyToMode('custom')}
+                  className={cn(
+                    'flex items-center gap-2.5 px-4 py-3 rounded-lg border text-sm transition-colors text-left',
+                    replyToMode === 'custom'
+                      ? 'bg-brand-coral/10 border-brand-coral/50 text-brand-white'
+                      : 'bg-brand-dark border-white/10 text-brand-muted hover:border-white/20 hover:text-brand-white'
+                  )}
+                >
+                  <Mail className="h-4 w-4 flex-shrink-0" />
+                  <div>
+                    <div className="font-medium text-xs leading-tight">E-mail personalizado</div>
+                    <div className="text-xs text-brand-muted/60 mt-0.5">Responder vai para outro e-mail</div>
+                  </div>
+                </button>
+              </div>
+              {replyToMode === 'custom' && (
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted/60 pointer-events-none">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <input
+                    id="replyTo"
+                    type="email"
+                    placeholder="ana.silva@gmail.com"
+                    value={form.replyTo}
+                    onChange={(e) => update('replyTo', e.target.value)}
+                    className={inputCls(!!errors.replyTo, true)}
+                  />
+                </div>
+              )}
+              <FieldError msg={errors.replyTo} />
+            </div>
           </FormCard>
         </div>
 
