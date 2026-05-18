@@ -1,124 +1,117 @@
 import { NextResponse } from 'next/server'
-import { Client } from 'pg'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
 // One-time migration endpoint.
-// Requires DATABASE_URL in Vercel env vars — get it from:
-// Supabase → Project Settings → Database → Connection string → URI
-// Example: postgresql://postgres.xxxx:PASSWORD@aws-0-sa-east-1.pooler.supabase.com:6543/postgres
+// Uses the Supabase JS client (HTTPS) — no direct DB connection needed.
+// Hit GET /api/migrate to verify tables exist and are accessible.
 
-const MIGRATION_SQL = `
-DO $$
-BEGIN
+// SQL to run manually in Supabase SQL Editor if tables are missing:
+// https://supabase.com/dashboard → your project → SQL Editor
+const SCHEMA_SQL = `
+-- Execute no Supabase SQL Editor:
+-- https://supabase.com/dashboard → seu projeto → SQL Editor
 
-  -- ── Create tables if they don't exist yet (with text PKs from the start) ──────
+create extension if not exists "uuid-ossp";
 
-  CREATE TABLE IF NOT EXISTS client_campaigns (
-    id            text        PRIMARY KEY,
-    name          text        NOT NULL,
-    recruiter_name text       NOT NULL DEFAULT '',
-    recruiter_email text      NOT NULL DEFAULT '',
-    segment       text        NOT NULL DEFAULT '',
-    key_points    text,
-    status        text        NOT NULL DEFAULT 'draft',
-    contact_count integer     NOT NULL DEFAULT 0,
-    sent_count    integer     NOT NULL DEFAULT 0,
-    failed_count  integer     NOT NULL DEFAULT 0,
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    updated_at    timestamptz NOT NULL DEFAULT now()
-  );
+create table if not exists client_campaigns (
+  id            text        primary key,
+  name          text        not null,
+  recruiter_name text       not null default '',
+  recruiter_email text      not null default '',
+  segment       text        not null default '',
+  key_points    text,
+  status        text        not null default 'draft',
+  contact_count integer     not null default 0,
+  sent_count    integer     not null default 0,
+  failed_count  integer     not null default 0,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
 
-  CREATE TABLE IF NOT EXISTS client_contacts (
-    id               text        PRIMARY KEY,
-    campaign_id      text        NOT NULL,
-    name             text,
-    first_name       text,
-    email            text        NOT NULL,
-    company          text,
-    position         text,
-    status           text        NOT NULL DEFAULT 'pending',
-    generated_subject text,
-    generated_body   text,
-    edited_subject   text,
-    edited_body      text,
-    message_id       text,
-    error_message    text,
-    sent_at          timestamptz,
-    created_at       timestamptz NOT NULL DEFAULT now()
-  );
+create table if not exists client_contacts (
+  id               text        primary key,
+  campaign_id      text        not null references client_campaigns(id) on delete cascade,
+  name             text,
+  first_name       text,
+  email            text        not null,
+  company          text,
+  position         text,
+  status           text        not null default 'pending',
+  generated_subject text,
+  generated_body   text,
+  edited_subject   text,
+  edited_body      text,
+  message_id       text,
+  error_message    text,
+  sent_at          timestamptz,
+  created_at       timestamptz not null default now()
+);
 
-  -- ── If tables already existed with uuid columns, migrate them to text ─────────
+-- Se as tabelas já existem com colunas uuid, converta para text:
+alter table if exists client_campaigns alter column id type text using id::text;
+alter table if exists client_contacts  alter column id type text using id::text;
+alter table if exists client_contacts  alter column campaign_id type text using campaign_id::text;
 
-  -- Drop FK first (may not exist)
-  ALTER TABLE client_contacts DROP CONSTRAINT IF EXISTS client_contacts_campaign_id_fkey;
-
-  -- Alter campaign id
-  BEGIN
-    ALTER TABLE client_campaigns ALTER COLUMN id TYPE text USING id::text;
-  EXCEPTION WHEN others THEN NULL;
-  END;
-
-  -- Alter contact id
-  BEGIN
-    ALTER TABLE client_contacts ALTER COLUMN id TYPE text USING id::text;
-  EXCEPTION WHEN others THEN NULL;
-  END;
-
-  -- Alter contact campaign_id
-  BEGIN
-    ALTER TABLE client_contacts ALTER COLUMN campaign_id TYPE text USING campaign_id::text;
-  EXCEPTION WHEN others THEN NULL;
-  END;
-
-  -- Recreate FK (drop first to be safe)
-  ALTER TABLE client_contacts DROP CONSTRAINT IF EXISTS client_contacts_campaign_id_fkey;
-  ALTER TABLE client_contacts ADD CONSTRAINT client_contacts_campaign_id_fkey
-    FOREIGN KEY (campaign_id) REFERENCES client_campaigns(id) ON DELETE CASCADE;
-
-  -- ── RLS: enable + permissive policies so anon key can read/write ──────────────
-
-  ALTER TABLE client_campaigns ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE client_contacts  ENABLE ROW LEVEL SECURITY;
-
-  DROP POLICY IF EXISTS "recrutae_all_campaigns" ON client_campaigns;
-  CREATE POLICY "recrutae_all_campaigns" ON client_campaigns FOR ALL USING (true) WITH CHECK (true);
-
-  DROP POLICY IF EXISTS "recrutae_all_contacts" ON client_contacts;
-  CREATE POLICY "recrutae_all_contacts" ON client_contacts FOR ALL USING (true) WITH CHECK (true);
-
-END $$;
+-- RLS — permite que a chave anon leia e escreva:
+alter table client_campaigns enable row level security;
+alter table client_contacts  enable row level security;
+drop policy if exists "recrutae_all_campaigns" on client_campaigns;
+create policy "recrutae_all_campaigns" on client_campaigns for all using (true) with check (true);
+drop policy if exists "recrutae_all_contacts" on client_contacts;
+create policy "recrutae_all_contacts" on client_contacts for all using (true) with check (true);
 `
 
 export async function GET() {
-  const dbUrl = process.env.DATABASE_URL
-  if (!dbUrl) {
+  if (!isSupabaseConfigured() || !supabase) {
     return NextResponse.json(
       {
         success: false,
-        error: 'DATABASE_URL não configurada no Vercel. Adicione em Settings → Environment Variables.\n' +
-          'Valor: Supabase → Project Settings → Database → Connection string → URI',
+        error:
+          'NEXT_PUBLIC_SUPABASE_URL e/ou NEXT_PUBLIC_SUPABASE_ANON_KEY não configurados no Vercel.',
       },
       { status: 500 }
     )
   }
 
-  const client = new Client({
-    connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 10_000,
-  })
+  // Check client_campaigns
+  const { error: campErr } = await supabase
+    .from('client_campaigns')
+    .select('id')
+    .limit(0)
 
-  try {
-    await client.connect()
-    await client.query(MIGRATION_SQL)
-    await client.end()
-    return NextResponse.json({
-      success: true,
-      message: 'Migration executada com sucesso. Tabelas criadas/atualizadas, RLS configurado.',
-    })
-  } catch (err) {
-    await client.end().catch(() => {})
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[migrate]', msg)
-    return NextResponse.json({ success: false, error: msg }, { status: 500 })
+  // Check client_contacts
+  const { error: contErr } = await supabase
+    .from('client_contacts')
+    .select('id')
+    .limit(0)
+
+  if (campErr || contErr) {
+    const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')
+      .replace('https://', '')
+      .replace('.supabase.co', '')
+
+    return NextResponse.json(
+      {
+        success: false,
+        action_required: true,
+        message:
+          'Tabelas não encontradas ou sem permissão de acesso. ' +
+          'Execute o SQL abaixo no Supabase SQL Editor e acesse /api/migrate novamente.',
+        sql_editor_url: projectRef
+          ? `https://supabase.com/dashboard/project/${projectRef}/sql/new`
+          : 'https://supabase.com/dashboard',
+        schema_sql: SCHEMA_SQL,
+        errors: {
+          client_campaigns: campErr?.message ?? null,
+          client_contacts: contErr?.message ?? null,
+        },
+      },
+      { status: 500 }
+    )
   }
+
+  return NextResponse.json({
+    success: true,
+    message: 'Banco de dados OK. Tabelas client_campaigns e client_contacts existem e estão acessíveis.',
+  })
 }
