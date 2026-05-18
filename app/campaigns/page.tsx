@@ -17,9 +17,12 @@ import {
   Check,
   X,
   MailOpen,
+  RefreshCw,
 } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { CampaignStatus } from '@/lib/types'
+import { syncAllFromSupabase } from '@/lib/supabaseOps'
+import { toast } from 'sonner'
 
 const STATUS_CONFIG: Record<CampaignStatus, { label: string; classes: string }> = {
   draft:      { label: 'Rascunho', classes: 'bg-white/5 text-brand-muted border-white/10' },
@@ -42,7 +45,30 @@ export default function CampaignsPage() {
 
   const [editingId, setEditingId]     = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [syncing, setSyncing]         = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleSyncFromDb = async () => {
+    setSyncing(true)
+    try {
+      const { campaigns: incoming, candidatesByCampaign, configMap } = await syncAllFromSupabase()
+      if (incoming.length === 0) {
+        toast.info('Nenhuma campanha encontrada no banco de dados.')
+        return
+      }
+      const { mergeCampaignsFromDb } = useAppStore.getState()
+      const added = mergeCampaignsFromDb(incoming, candidatesByCampaign, configMap)
+      toast.success(
+        added > 0
+          ? `${added} campanha${added > 1 ? 's' : ''} nova${added > 1 ? 's' : ''} importada${added > 1 ? 's' : ''} (${incoming.length} total no banco).`
+          : `Sincronizado — ${incoming.length} campanha${incoming.length > 1 ? 's' : ''} no banco, contagens atualizadas.`
+      )
+    } catch {
+      toast.error('Falha ao conectar com o banco de dados.')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const startEdit = (id: string, name: string) => {
     setEditingId(id)
@@ -119,12 +145,22 @@ export default function CampaignsPage() {
             <h1 className="text-3xl font-display font-bold text-brand-white">Campanhas</h1>
             <p className="text-brand-muted text-sm mt-1">Gerencie todas as suas campanhas de outreach</p>
           </div>
-          <button
-            onClick={() => router.push('/')}
-            className="btn-coral flex items-center gap-2 px-4 py-2.5 text-sm font-semibold"
-          >
-            <Plus className="h-4 w-4" /> Nova Campanha
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSyncFromDb}
+              disabled={syncing}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:border-white/20 hover:bg-white/5 transition-all text-sm font-medium disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-4 w-4', syncing && 'animate-spin')} />
+              {syncing ? 'Sincronizando…' : 'Sincronizar com banco'}
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="btn-coral flex items-center gap-2 px-4 py-2.5 text-sm font-semibold"
+            >
+              <Plus className="h-4 w-4" /> Nova Campanha
+            </button>
+          </div>
         </div>
 
         {/* Stats */}

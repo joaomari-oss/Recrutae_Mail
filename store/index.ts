@@ -26,6 +26,13 @@ interface AppStore {
   addSentEmail: (email: SentEmail) => void
   setSentEmails: (emails: SentEmail[]) => void
 
+  // Supabase sync
+  mergeCampaignsFromDb: (
+    incoming: Campaign[],
+    candidateMap: Record<string, Candidate[]>,
+    configMap: Record<string, Partial<CampaignConfig>>
+  ) => number
+
   // Email open notifications (from Resend webhooks)
   emailOpenEvents: EmailOpenEvent[]
   /** ISO string of when the user last acknowledged notifications */
@@ -273,6 +280,56 @@ export const useAppStore = create<AppStore>()(
           const newEmails = emails.filter((e) => !existingIds.has(e.id))
           return { sentEmails: [...newEmails, ...state.sentEmails] }
         }),
+
+      mergeCampaignsFromDb: (incoming, candidateMap, configMap) => {
+        let added = 0
+        set((state) => {
+          const existingIds = new Set(state.campaigns.map((c) => c.id))
+          const newCampaigns = incoming.filter((c) => !existingIds.has(c.id))
+          added = newCampaigns.length
+
+          // Update sent/failed counts for campaigns that already exist locally
+          const updatedCampaigns = state.campaigns.map((local) => {
+            const remote = incoming.find((r) => r.id === local.id)
+            if (!remote) return local
+            return {
+              ...local,
+              sentCount: Math.max(local.sentCount, remote.sentCount),
+              failedCount: Math.max(local.failedCount, remote.failedCount),
+              totalCandidates: Math.max(local.totalCandidates, remote.totalCandidates),
+            }
+          })
+
+          const mergedCandidates = { ...state.candidatesByCampaign }
+          const mergedConfigs = { ...state.campaignConfigById }
+
+          for (const camp of newCampaigns) {
+            if (candidateMap[camp.id]) mergedCandidates[camp.id] = candidateMap[camp.id]
+            if (configMap[camp.id]) {
+              mergedConfigs[camp.id] = {
+                role: '',
+                jobDescription: '',
+                link: '',
+                hiringCompany: '',
+                recruiterLinkedin: '',
+                aiProvider: 'openai',
+                replyTo: '',
+                recruiterName: '',
+                recruiterCompany: '',
+                ...mergedConfigs[camp.id],
+                ...configMap[camp.id],
+              } as CampaignConfig
+            }
+          }
+
+          return {
+            campaigns: [...newCampaigns, ...updatedCampaigns],
+            candidatesByCampaign: mergedCandidates,
+            campaignConfigById: mergedConfigs,
+          }
+        })
+        return added
+      },
 
       addEmailOpenEvents: (events) =>
         set((state) => {

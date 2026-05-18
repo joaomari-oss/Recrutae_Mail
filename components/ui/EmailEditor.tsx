@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
 import { useAppStore } from '@/store'
 import { Candidate } from '@/lib/types'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -32,7 +33,8 @@ export function EmailEditor({
   onRegenerate,
   onNext,
 }: EmailEditorProps) {
-  const { updateCandidate } = useAppStore()
+  const { updateCandidate, campaignConfigById } = useAppStore()
+  const config = campaignConfigById[campaignId]
   const [localSubject, setLocalSubject] = useState(
     candidate.editedSubject || candidate.generatedSubject
   )
@@ -227,6 +229,36 @@ export function EmailEditor({
                   'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
               />
+            </div>
+
+            {/* Signature preview */}
+            <div className="border-t border-white/8 pt-4">
+              <p className="text-xs font-medium text-brand-muted uppercase tracking-widest mb-3">
+                Assinatura (prévia)
+              </p>
+              <div className="bg-white rounded-xl p-4 flex items-center gap-4 border border-white/10">
+                <Image
+                  src="/logorecrutae.webp"
+                  alt="Recrutaê"
+                  width={80}
+                  height={32}
+                  className="object-contain flex-shrink-0"
+                />
+                <div className="border-l-2 border-[#F5A623] pl-4">
+                  <p className="text-[#111827] font-bold text-sm leading-tight">
+                    {config?.recruiterName || 'Seu Nome'}
+                  </p>
+                  {config?.recruiterRole && (
+                    <p className="text-[#555570] text-xs mt-0.5">{config.recruiterRole}</p>
+                  )}
+                  {config?.recruiterCompany && (
+                    <p className="text-[#555570] text-xs mt-0.5">{config.recruiterCompany}</p>
+                  )}
+                  <p className="text-[#F5A623] text-xs font-bold tracking-wider uppercase mt-1">
+                    Recrutaê
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         )}

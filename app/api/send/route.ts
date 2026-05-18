@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { Resend } from 'resend'
 import { SendEmailRequest } from '@/lib/types'
 import { validateApiKey, unauthorizedResponse } from '@/lib/api-auth'
 import { checkRateLimit } from '@/lib/rate-limiter'
+
+// Read logo once at module load — embedded as base64 so it always shows in email clients
+// regardless of whether the app URL is public or localhost
+let LOGO_DATA_URI = ''
+try {
+  const buf = readFileSync(join(process.cwd(), 'public', 'logorecrutae.webp'))
+  LOGO_DATA_URI = `data:image/webp;base64,${buf.toString('base64')}`
+} catch {
+  // Will fall back to URL in signatureHtml
+}
 
 // In-memory registry of sent emails — prevents duplicate sends within a process lifetime
 const sentRegistry = new Map<string, { messageId: string; sentAt: string }>()
@@ -144,7 +156,7 @@ export async function POST(req: NextRequest) {
     .join('')
 
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://recrutae.com.br').replace(/\/$/, '')
-  const logoUrl = `${appUrl}/logorecrutae.webp`
+  const logoSrc = LOGO_DATA_URI || `${appUrl}/logorecrutae.webp`
   const safeRecruiterRole = recruiterRole?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
   const safeRecruiterCompany = recruiterCompany?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
   const displayName = safeSenderName || 'Recrutaê'
@@ -166,7 +178,7 @@ export async function POST(req: NextRequest) {
       <table cellpadding="0" cellspacing="0" border="0">
         <tr valign="middle">
           <td style="padding-right:16px;">
-            <img src="${logoUrl}" alt="Recrutaê" width="88" height="auto"
+            <img src="${logoSrc}" alt="Recrutaê" width="88" height="auto"
               style="display:block;border:0;width:88px;" />
           </td>
           <td style="border-left:3px solid #F5A623;padding-left:14px;">

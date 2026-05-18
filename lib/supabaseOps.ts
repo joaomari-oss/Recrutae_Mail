@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { ClientContact, ClientCampaign, ClientCampaignConfig } from './clientTypes'
-import { Candidate, Campaign, CampaignConfig } from './types'
+import { Candidate, Campaign, CampaignConfig, CampaignStatus, CandidateStatus } from './types'
 
 // ── Create a full campaign with all contacts ──────────────────────────────────
 export async function saveCampaignToSupabase(
@@ -130,6 +130,80 @@ export type DbCampaignRow = {
   failed_count: number
   created_at: string
   updated_at: string
+}
+
+// ── Load all campaigns + contacts from Supabase for cross-device sync ─────────
+export async function syncAllFromSupabase(): Promise<{
+  campaigns: Campaign[]
+  candidatesByCampaign: Record<string, Candidate[]>
+  configMap: Record<string, Partial<CampaignConfig>>
+}> {
+  if (!supabase) return { campaigns: [], candidatesByCampaign: {}, configMap: {} }
+
+  const { data: campRows, error: campErr } = await supabase
+    .from('client_campaigns')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (campErr || !campRows?.length) return { campaigns: [], candidatesByCampaign: {}, configMap: {} }
+
+  const campaigns: Campaign[] = campRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    status: (row.status ?? 'completed') as CampaignStatus,
+    totalCandidates: row.contact_count ?? 0,
+    approvedCount: 0,
+    sentCount: row.sent_count ?? 0,
+    failedCount: row.failed_count ?? 0,
+  }))
+
+  const configMap: Record<string, Partial<CampaignConfig>> = {}
+  for (const row of campRows) {
+    configMap[row.id] = {
+      recruiterName: row.recruiter_name ?? '',
+      replyTo: row.recruiter_email ?? '',
+      recruiterCompany: row.segment ?? '',
+      jobDescription: row.key_points ?? '',
+    }
+  }
+
+  // Load contacts in parallel (one query per campaign)
+  const contactResults = await Promise.all(
+    campRows.map((row) =>
+      supabase!
+        .from('client_contacts')
+        .select('*')
+        .eq('campaign_id', row.id)
+    )
+  )
+
+  const candidatesByCampaign: Record<string, Candidate[]> = {}
+  for (let i = 0; i < campRows.length; i++) {
+    const { data, error } = contactResults[i]
+    if (error || !data) continue
+    candidatesByCampaign[campRows[i].id] = data.map((c) => ({
+      id: c.id,
+      firstName: c.first_name ?? '',
+      lastName: '',
+      fullName: c.name ?? c.email,
+      title: c.position ?? '',
+      company: c.company ?? '',
+      email: c.email,
+      linkedinUrl: '',
+      status: (c.status ?? 'sent') as CandidateStatus,
+      generatedSubject: c.generated_subject ?? '',
+      generatedBody: c.generated_body ?? '',
+      editedSubject: c.edited_subject ?? '',
+      editedBody: c.edited_body ?? '',
+      sentAt: c.sent_at ?? undefined,
+      errorMessage: c.error_message ?? undefined,
+      resendMessageId: c.message_id ?? undefined,
+      sendAttempts: 0,
+    }))
+  }
+
+  return { campaigns, candidatesByCampaign, configMap }
 }
 
 // ── Upsert campaign + contact after a send attempt (current app types) ────────
