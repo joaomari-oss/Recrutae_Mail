@@ -129,6 +129,7 @@ export default function CampaignPage() {
     recruiterRole:      existingConfig?.recruiterRole ?? '',
     replyTo:            existingConfig?.replyTo ?? '',
     aiProvider:         existingConfig?.aiProvider ?? 'openai',
+    subjectTemplate:    existingConfig?.subjectTemplate ?? '',
   })
 
   const [errors, setErrors] = useState<Partial<Record<keyof CampaignConfig, string>>>({})
@@ -433,8 +434,33 @@ export default function CampaignPage() {
           </FormCard>
         </div>
 
+        {/* Section: Subject template */}
+        <div className="animate-fade-up stagger-4" style={{ animationFillMode: 'forwards' }}>
+          <FormCard
+            icon={<Mail className="h-4 w-4 text-brand-coral" />}
+            title="Assunto dos emails"
+            description="Template base do assunto. A IA varia minimamente para não cair em spam."
+          >
+            <Field
+              id="subjectTemplate"
+              label="Template do assunto"
+              optional
+              hint='Deixe vazio para usar o padrão: "Apresentação Recrutaê — {cargo} | Indicação {sua empresa}"'
+            >
+              <input
+                id="subjectTemplate"
+                type="text"
+                placeholder="Apresentação Recrutaê — Recrutamento SaaS & Digital | Indicação Find HR"
+                value={form.subjectTemplate ?? ''}
+                onChange={(e) => update('subjectTemplate', e.target.value)}
+                className={inputCls(false, false)}
+              />
+            </Field>
+          </FormCard>
+        </div>
+
         {/* Actions */}
-        <div className="flex gap-3 animate-fade-up stagger-4" style={{ animationFillMode: 'forwards' }}>
+        <div className="flex gap-3 animate-fade-up stagger-5" style={{ animationFillMode: 'forwards' }}>
           <button
             onClick={() => router.push('/')}
             className="flex items-center gap-2 px-5 py-3 rounded-lg border border-white/10 text-brand-muted hover:text-brand-white hover:border-white/20 hover:bg-white/5 transition-all text-sm font-medium"

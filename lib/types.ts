@@ -59,6 +59,8 @@ export type CampaignConfig = {
   /** Email pessoal do recrutador — usado como Reply-To em todos os emails da campanha */
   replyTo: string
   aiProvider: AIProvider
+  /** Template base do assunto — ex: "Apresentação Recrutaê — Recrutamento SaaS | Indicação Find HR" */
+  subjectTemplate?: string
 }
 
 export type SentEmail = {

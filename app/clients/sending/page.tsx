@@ -6,7 +6,6 @@ import { useClientStore } from '@/store/clientStore'
 // Note: useClientStore.getState() used below for final counts after async loop
 import { Loader2, CheckCircle2, XCircle, Send, ArrowRight, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { updateContactInSupabase, updateCampaignInSupabase } from '@/lib/supabaseOps'
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -56,6 +55,7 @@ export default function ClientsSendingPage() {
             replyTo: config.replyTo,
             campaignId: activeCampaignId,
             contactEmail: contact.email,
+            contactId: contact.id,
           }),
         })
         const data = await res.json()
@@ -66,20 +66,11 @@ export default function ClientsSendingPage() {
           resendMessageId: data.messageId,
           sentAt,
         })
-        updateContactInSupabase(contact.id, {
-          status: 'sent',
-          message_id: data.messageId,
-          sent_at: sentAt,
-        }).catch(console.error)
       } catch (err) {
         updateContact(activeCampaignId, contact.id, {
           status: 'failed',
           errorMessage: err instanceof Error ? err.message : 'Erro desconhecido',
         })
-        updateContactInSupabase(contact.id, {
-          status: 'failed',
-          error_message: err instanceof Error ? err.message : 'Erro',
-        }).catch(console.error)
       }
       await delay(1500)
     }
@@ -87,7 +78,12 @@ export default function ClientsSendingPage() {
     const finalContacts = useClientStore.getState().contactsByCampaign[activeCampaignId] ?? []
     const sentCount = finalContacts.filter((c) => c.status === 'sent').length
     const failedCount = finalContacts.filter((c) => c.status === 'failed').length
-    updateCampaignInSupabase(activeCampaignId, { status: 'completed', sent_count: sentCount, failed_count: failedCount }).catch(console.error)
+    // Finalize campaign server-side (uses admin key → bypasses RLS)
+    fetch('/api/clients/finalize-campaign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaignId: activeCampaignId, sentCount, failedCount }),
+    }).catch(console.error)
     updateCampaign(activeCampaignId, { status: 'completed' })
     setDone(true)
     sendingRef.current = false

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import Groq from 'groq-sdk'
 import { GenerateClientEmailRequest } from '@/lib/clientTypes'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { supabase } from '@/lib/supabase'
+
+const db = supabaseAdmin ?? supabase
 
 function buildSystemPrompt() {
   return `Você é um motor de personalização de e-mails de prospecção B2B.
@@ -81,15 +85,30 @@ INSTRUÇÃO: Adapte o template acima para este contato específico. Substitua ma
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateClientEmailRequest & { subjectTemplate?: string } = await request.json()
-    const { contact, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, subjectTemplate, aiProvider, variationSeed } = body
+    const { contact, campaignId, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, subjectTemplate, aiProvider, variationSeed } = body
 
     if (!contact || !recruiterName || !segment || !emailTemplate) {
       return NextResponse.json({ error: 'Campos obrigatórios ausentes.' }, { status: 400 })
     }
 
+    /** Persist generated content to Supabase (server-side, uses admin key → bypasses RLS) */
+    async function persistGenerated(subject: string, generatedBody: string) {
+      if (!db || !contact?.id) return
+      await db.from('client_contacts').update({
+        status: 'ready',
+        generated_subject: subject,
+        generated_body: generatedBody,
+        edited_subject: subject,
+        edited_body: generatedBody,
+      }).eq('id', contact.id)
+      if (campaignId) {
+        await db.from('client_campaigns').update({ status: 'generating' }).eq('id', campaignId)
+      }
+    }
+
     const seed = variationSeed ?? Math.floor(Math.random() * 1000)
     const systemPrompt = buildSystemPrompt()
-    const userPrompt = buildUserPrompt({ contact, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, variationSeed: seed })
+    const userPrompt = buildUserPrompt({ contact, campaignId, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, variationSeed: seed })
 
     const provider = aiProvider ?? 'openai'
 
@@ -110,7 +129,9 @@ export async function POST(request: NextRequest) {
       const subject = subjectTemplate?.trim()
         ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
         : parsed.subject
-      return NextResponse.json({ subject, body: stripTrailingSignature(parsed.body) })
+      const finalBody = stripTrailingSignature(parsed.body)
+      await persistGenerated(subject, finalBody)
+      return NextResponse.json({ subject, body: finalBody })
     }
 
     // OpenAI (default)
@@ -131,7 +152,9 @@ export async function POST(request: NextRequest) {
       const subject = subjectTemplate?.trim()
         ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
         : parsed.subject
-      return NextResponse.json({ subject, body: stripTrailingSignature(parsed.body) })
+      const finalBody = stripTrailingSignature(parsed.body)
+      await persistGenerated(subject, finalBody)
+      return NextResponse.json({ subject, body: finalBody })
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
       if (status === 429) {

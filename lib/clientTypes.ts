@@ -82,6 +82,7 @@ export type ClientSegment = (typeof CLIENT_SEGMENTS)[number]
 
 export type GenerateClientEmailRequest = {
   contact: ClientContact
+  campaignId?: string
   recruiterName: string
   recruiterEmail: string
   /** Cargo do recrutador */
@@ -92,6 +93,17 @@ export type GenerateClientEmailRequest = {
   emailTemplate: string
   aiProvider?: 'openai' | 'groq'
   variationSeed?: number
+}
+
+export type SaveCampaignRequest = {
+  campaign: ClientCampaign
+  contacts: ClientContact[]
+  config: ClientCampaignConfig
+}
+
+export type SaveCampaignResponse = {
+  success: boolean
+  error?: string
 }
 
 export type SendClientEmailRequest = {
@@ -106,6 +118,7 @@ export type SendClientEmailRequest = {
   replyTo?: string
   campaignId?: string
   contactEmail?: string
+  contactId?: string
 }
 
 export type SendClientEmailResponse = {

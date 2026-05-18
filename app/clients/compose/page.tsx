@@ -7,8 +7,6 @@ import { ClientContact, ClientCampaignConfig, CLIENT_SEGMENTS } from '@/lib/clie
 import { ArrowRight, Mail, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Building2, Reply } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { saveCampaignToSupabase } from '@/lib/supabaseOps'
-import { isSupabaseConfigured } from '@/lib/supabase'
 
 export default function ClientsComposePage() {
   const router = useRouter()
@@ -77,21 +75,34 @@ export default function ClientsComposePage() {
     const id = createCampaign(campaignName.trim(), contacts, config)
     sessionStorage.removeItem('client-pending-contacts')
 
-    // Persist to Supabase in background (non-blocking)
-    if (isSupabaseConfigured()) {
-      const campaign = {
-        id,
-        name: campaignName.trim(),
-        createdAt: new Date().toISOString(),
-        status: 'draft' as const,
-        segment: config.segment,
-        totalContacts: contacts.length,
-        approvedCount: 0,
-        sentCount: 0,
-        failedCount: 0,
-      }
-      saveCampaignToSupabase(campaign, contacts, config).catch(console.error)
+    // Persist to Supabase via server-side API (uses service role key → bypasses RLS)
+    const campaign = {
+      id,
+      name: campaignName.trim(),
+      createdAt: new Date().toISOString(),
+      status: 'draft' as const,
+      segment: config.segment,
+      totalContacts: contacts.length,
+      approvedCount: 0,
+      sentCount: 0,
+      failedCount: 0,
     }
+    fetch('/api/clients/save-campaign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign, contacts, config }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.success) {
+          console.error('[compose] save-campaign failed:', d.error)
+          toast.error(`Aviso: campanha salva localmente mas não no banco. ${d.error ?? ''}`)
+        }
+      })
+      .catch((err) => {
+        console.error('[compose] save-campaign error:', err)
+        toast.error('Aviso: não foi possível salvar campanha no banco de dados.')
+      })
 
     router.push('/clients/review')
   }

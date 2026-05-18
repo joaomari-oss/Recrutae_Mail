@@ -3,6 +3,10 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { Resend } from 'resend'
 import { SendClientEmailRequest, SendClientEmailResponse } from '@/lib/clientTypes'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { supabase } from '@/lib/supabase'
+
+const db = supabaseAdmin ?? supabase
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -117,7 +121,7 @@ function sanitizeName(name: string): string {
 export async function POST(request: NextRequest): Promise<NextResponse<SendClientEmailResponse>> {
   try {
     const body: SendClientEmailRequest = await request.json()
-    const { to, subject, body: emailBody, contactName, recruiterName, recruiterEmail, recruiterRole, replyTo, campaignId, contactEmail } = body
+    const { to, subject, body: emailBody, contactName, recruiterName, recruiterEmail, recruiterRole, replyTo, campaignId, contactEmail, contactId } = body
 
     if (!to || !subject || !emailBody || !recruiterEmail) {
       return NextResponse.json({ success: false, error: 'Campos obrigatórios ausentes.' }, { status: 400 })
@@ -168,6 +172,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
 
     if (campaignId && contactEmail) {
       sentRegistry.set(`${campaignId}:${contactEmail}`, messageId)
+    }
+
+    // Persist sent status server-side (uses admin key → bypasses RLS)
+    if (db && contactId) {
+      await db.from('client_contacts').update({
+        status: 'sent',
+        message_id: messageId,
+        sent_at: new Date().toISOString(),
+      }).eq('id', contactId)
     }
 
     return NextResponse.json({ success: true, messageId })

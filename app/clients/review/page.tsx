@@ -18,7 +18,6 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { updateContactInSupabase } from '@/lib/supabaseOps'
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -146,6 +145,7 @@ export default function ClientsReviewPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contact,
+              campaignId: activeCampaignId,
               recruiterName: config.recruiterName,
               recruiterEmail: config.recruiterEmail,
               recruiterRole: config.recruiterRole,
@@ -170,19 +170,11 @@ export default function ClientsReviewPage() {
             editedSubject: data.subject,
             editedBody: data.body,
           })
-          updateContactInSupabase(contact.id, {
-            status: 'ready',
-            generated_subject: data.subject,
-            generated_body: data.body,
-            edited_subject: data.subject,
-            edited_body: data.body,
-          }).catch(console.error)
         } catch (err) {
           updateContact(activeCampaignId, contact.id, {
             status: 'failed',
             errorMessage: err instanceof Error ? err.message : 'Erro desconhecido',
           })
-          updateContactInSupabase(contact.id, { status: 'failed', error_message: err instanceof Error ? err.message : 'Erro' }).catch(console.error)
         }
         if (i < pending.length - 1) await delay(400)
       }
@@ -203,6 +195,7 @@ export default function ClientsReviewPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contact: selected,
+          campaignId: activeCampaignId,
           recruiterName: config.recruiterName,
           recruiterEmail: config.recruiterEmail,
           recruiterRole: config.recruiterRole,
