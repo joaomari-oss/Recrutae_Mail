@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readFileSync } from 'fs'
-import { join } from 'path'
 import { Resend } from 'resend'
 import { SendClientEmailRequest, SendClientEmailResponse } from '@/lib/clientTypes'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { supabase } from '@/lib/supabase'
+import { LOGO_DATA_URI } from '@/lib/logoBase64'
 
 const db = supabaseAdmin ?? supabase
 
@@ -14,15 +13,6 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 const sentRegistry = new Map<string, string>()
 
 const FONT = `'Helvetica Neue', Helvetica, Arial, sans-serif`
-
-function getLogoDataUri(): string {
-  try {
-    const buf = readFileSync(join(process.cwd(), 'public', 'recrutae.webp'))
-    return `data:image/webp;base64,${buf.toString('base64')}`
-  } catch {
-    return ''
-  }
-}
 
 function buildHtml(
   body: string,
@@ -44,7 +34,7 @@ function buildHtml(
     return `<p style="margin:0 0 16px 0;font-family:${FONT};font-size:15px;line-height:1.75;color:#1a1a2e;">${linked}</p>`
   }).join('')
 
-  const logoSrc = getLogoDataUri()
+  const logoSrc = LOGO_DATA_URI
   const safeName = escapeHtml(recruiterName || 'Recrutaê')
   const safeRole = escapeHtml(recruiterRole || '')
 

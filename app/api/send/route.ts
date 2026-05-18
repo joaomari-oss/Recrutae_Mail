@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readFileSync } from 'fs'
-import { join } from 'path'
 import { Resend } from 'resend'
 import { SendEmailRequest } from '@/lib/types'
 import { validateApiKey, unauthorizedResponse } from '@/lib/api-auth'
 import { checkRateLimit } from '@/lib/rate-limiter'
-
-function getLogoDataUri(): string {
-  try {
-    const buf = readFileSync(join(process.cwd(), 'public', 'recrutae.webp'))
-    return `data:image/webp;base64,${buf.toString('base64')}`
-  } catch (e) {
-    console.error('[send] Failed to read logo file:', e)
-    return ''
-  }
-}
+import { LOGO_DATA_URI } from '@/lib/logoBase64'
 
 // In-memory registry of sent emails — prevents duplicate sends within a process lifetime
 const sentRegistry = new Map<string, { messageId: string; sentAt: string }>()
@@ -156,7 +145,7 @@ export async function POST(req: NextRequest) {
     })
     .join('')
 
-  const logoSrc = getLogoDataUri()
+  const logoSrc = LOGO_DATA_URI
   const safeRecruiterRole = recruiterRole?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
   const safeRecruiterCompany = recruiterCompany?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
   const displayName = safeSenderName || 'Recrutaê'
