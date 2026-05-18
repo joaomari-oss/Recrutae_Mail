@@ -132,9 +132,14 @@ export async function POST(req: NextRequest) {
     .split('\n')
     .map((line) => {
       const safe = escapeHtml(line)
-      return safe.trim() === ''
-        ? '<p style="margin:0 0 14px 0;">&nbsp;</p>'
-        : `<p style="margin:0 0 14px 0;">${safe}</p>`
+      const trimmed = safe.trim()
+      if (trimmed === '') return '<p style="margin:0 0 14px 0;">&nbsp;</p>'
+      // Make URLs clickable with legible blue
+      const linked = trimmed.replace(
+        /(https?:\/\/[^\s<]+)/g,
+        '<a href="$1" style="color:#2563eb;text-decoration:underline;">$1</a>'
+      )
+      return `<p style="margin:0 0 14px 0;">${linked}</p>`
     })
     .join('')
 
@@ -165,7 +170,7 @@ export async function POST(req: NextRequest) {
               style="display:block;border:0;width:88px;" />
           </td>
           <td style="border-left:3px solid #F5A623;padding-left:14px;">
-            <p style="margin:0;font-size:14px;font-weight:700;color:#1A1A2E;line-height:1.4;">${escapeHtml(displayName)}</p>
+            <p style="margin:0;font-size:14px;font-weight:700;color:#111827;line-height:1.4;">${escapeHtml(displayName)}</p>
             ${safeRecruiterRole ? `<p style="margin:1px 0 0 0;font-size:12px;color:#555570;line-height:1.4;">${escapeHtml(safeRecruiterRole)}</p>` : ''}
             ${safeRecruiterCompany ? `<p style="margin:1px 0 0 0;font-size:12px;color:#555570;line-height:1.4;">${escapeHtml(safeRecruiterCompany)}</p>` : ''}
             <p style="margin:5px 0 0 0;font-size:11px;color:#F5A623;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;">Recrutaê</p>
@@ -176,16 +181,32 @@ export async function POST(req: NextRequest) {
   </tr>
 </table>`
 
-  // Body uses padding on <body> directly (no outer wrapper div/table) — looks like a real email
+  // Body uses table-based layout for Outlook compatibility
   const fullHtml = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="x-apple-disable-message-reformatting" />
+<!--[if !mso]><!-->
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<!--<![endif]-->
 </head>
-<body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#1a1a1a;margin:0;padding:24px 28px;">
-${htmlBody}
-${signatureHtml}
+<body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#ffffff;">
+  <tr>
+    <td style="padding:28px 32px 32px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:600px;margin:0 auto;">
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#111827;">
+            ${htmlBody}
+            ${signatureHtml}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
 </body>
 </html>`
 

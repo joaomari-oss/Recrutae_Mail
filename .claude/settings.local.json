@@ -19,7 +19,8 @@
       "Bash(netstat -ano)",
       "Bash(findstr :3000)",
       "Bash(taskkill /F /IM node.exe)",
-      "PowerShell(Get-Process *)"
+      "PowerShell(Get-Process *)",
+      "Bash(git push *)"
     ]
   }
 }

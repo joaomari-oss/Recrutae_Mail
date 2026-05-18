@@ -38,19 +38,17 @@ export default function ClientCampaignsPage() {
     setLoading(true)
     if (isSupabaseConfigured()) {
       const data = await loadCampaignsFromSupabase()
-      if (data.length > 0) {
-        setSource('supabase')
-        setRows(data.map((d: DbCampaignRow) => ({
-          id: d.id, name: d.name, segment: d.segment, status: d.status,
-          recruiter_email: d.recruiter_email, recruiter_name: d.recruiter_name,
-          contact_count: d.contact_count, sent_count: d.sent_count, failed_count: d.failed_count,
-          created_at: d.created_at, source: 'supabase' as const,
-        })))
-        setLoading(false)
-        return
-      }
+      setSource('supabase')
+      setRows(data.map((d: DbCampaignRow) => ({
+        id: d.id, name: d.name, segment: d.segment, status: d.status,
+        recruiter_email: d.recruiter_email, recruiter_name: d.recruiter_name,
+        contact_count: d.contact_count, sent_count: d.sent_count, failed_count: d.failed_count,
+        created_at: d.created_at, source: 'supabase' as const,
+      })))
+      setLoading(false)
+      return
     }
-    // Fallback to localStorage
+    // Fallback to localStorage (Supabase not configured)
     setSource('local')
     setRows(localCampaigns.map((c) => ({
       id: c.id, name: c.name, segment: c.segment, status: c.status,

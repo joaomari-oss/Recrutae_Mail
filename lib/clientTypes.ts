@@ -99,6 +99,7 @@ export type SendClientEmailRequest = {
   contactName: string
   recruiterName: string
   recruiterEmail: string
+  recruiterRole?: string
   /** E-mail pessoal para Reply-To */
   replyTo?: string
   campaignId?: string

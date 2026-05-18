@@ -49,7 +49,7 @@ export const useClientStore = create<ClientStore>()(
       campaignConfigById: {},
 
       createCampaign: (name, contacts, config) => {
-        const id = `client-campaign-${crypto.randomUUID()}`
+        const id = crypto.randomUUID()
         const campaign: ClientCampaign = {
           id,
           name,
