@@ -24,6 +24,7 @@ export default function ClientsComposePage() {
   const [recruiterLinkedin, setRecruiterLinkedin] = useState('')
   const [selectedSegment, setSelectedSegment] = useState('')
   const [emailTemplate, setEmailTemplate] = useState('')
+  const [subjectTemplate, setSubjectTemplate] = useState('')
   const [segmentSearch, setSegmentSearch] = useState('')
   const [segmentOpen, setSegmentOpen] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -70,6 +71,7 @@ export default function ClientsComposePage() {
       replyTo: replyTo.trim().toLowerCase(),
       segment: selectedSegment,
       emailTemplate: emailTemplate.trim(),
+      subjectTemplate: subjectTemplate.trim() || undefined,
     }
 
     const id = createCampaign(campaignName.trim(), contacts, config)
@@ -368,6 +370,24 @@ export default function ClientsComposePage() {
             {emailTemplate.trim() && (
               <p className="text-xs text-brand-muted/50">{emailTemplate.trim().split(/\s+/).length} palavras</p>
             )}
+          </div>
+
+          {/* Subject template */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-brand-muted">
+              Assunto dos e-mails
+              <span className="ml-2 text-xs text-brand-muted/50">(opcional)</span>
+            </label>
+            <p className="text-xs text-brand-muted/60 leading-relaxed">
+              Define o assunto base. A IA faz uma variação mínima por contato para evitar filtros de spam.
+            </p>
+            <input
+              type="text"
+              placeholder="Ex: Recrutaê — uma conversa rápida sobre a {{EMPRESA}}"
+              value={subjectTemplate}
+              onChange={(e) => setSubjectTemplate(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg border border-white/10 focus:border-brand-coral/50 text-sm text-brand-white bg-brand-charcoal outline-none transition-colors placeholder:text-brand-muted/40"
+            />
           </div>
 
           {/* Info banner */}

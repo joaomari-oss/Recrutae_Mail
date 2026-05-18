@@ -78,8 +78,8 @@ INSTRUÇÃO: Adapte o template acima para este contato específico. Substitua ma
 
 export async function POST(request: NextRequest) {
   try {
-    const body: GenerateClientEmailRequest = await request.json()
-    const { contact, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, aiProvider, variationSeed } = body
+    const body: GenerateClientEmailRequest & { subjectTemplate?: string } = await request.json()
+    const { contact, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, subjectTemplate, aiProvider, variationSeed } = body
 
     if (!contact || !recruiterName || !segment || !emailTemplate) {
       return NextResponse.json({ error: 'Campos obrigatórios ausentes.' }, { status: 400 })
@@ -105,7 +105,10 @@ export async function POST(request: NextRequest) {
       })
       const text = completion.choices[0]?.message?.content ?? ''
       const parsed = JSON.parse(text)
-      return NextResponse.json({ subject: parsed.subject, body: parsed.body })
+      const subject = subjectTemplate?.trim()
+        ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
+        : parsed.subject
+      return NextResponse.json({ subject, body: parsed.body })
     }
 
     // OpenAI (default)
@@ -123,7 +126,10 @@ export async function POST(request: NextRequest) {
       })
       const text = completion.choices[0]?.message?.content ?? ''
       const parsed = JSON.parse(text)
-      return NextResponse.json({ subject: parsed.subject, body: parsed.body })
+      const subject = subjectTemplate?.trim()
+        ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
+        : parsed.subject
+      return NextResponse.json({ subject, body: parsed.body })
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
       if (status === 429) {

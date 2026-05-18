@@ -47,6 +47,8 @@ export type ClientCampaignConfig = {
   replyTo: string
   segment: string
   emailTemplate: string
+  /** Template base do assunto — a IA faz variação mínima para evitar spam */
+  subjectTemplate?: string
 }
 
 export const CLIENT_SEGMENTS = [
