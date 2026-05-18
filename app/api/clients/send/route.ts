@@ -13,7 +13,7 @@ const FONT = `'Helvetica Neue', Helvetica, Arial, sans-serif`
 
 function getLogoDataUri(): string {
   try {
-    const buf = readFileSync(join(process.cwd(), 'public', 'logorecrutae.webp'))
+    const buf = readFileSync(join(process.cwd(), 'public', 'recrutae.webp'))
     return `data:image/webp;base64,${buf.toString('base64')}`
   } catch {
     return ''

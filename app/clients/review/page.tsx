@@ -412,7 +412,7 @@ export default function ClientsReviewPage() {
                   <div className="rounded-xl border border-white/8 bg-white px-5 py-4">
                     <div className="border-t border-gray-200 pt-4 mt-1 flex items-center gap-4">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src="/logorecrutae.webp" alt="Recrutaê" width={80} style={{ display: 'block', flexShrink: 0 }} />
+                      <img src="/recrutae.webp" alt="Recrutaê" width={80} style={{ display: 'block', flexShrink: 0 }} />
                       <div style={{ borderLeft: '3px solid #F5A623', paddingLeft: '14px' }}>
                         <p style={{ margin: 0, fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: '14px', fontWeight: 700, color: '#1a1a2e', lineHeight: 1.3 }}>{config.recruiterName}</p>
                         {config.recruiterRole && <p style={{ margin: '3px 0 0', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: '12px', color: '#6b7280', lineHeight: 1.4 }}>{config.recruiterRole}</p>}

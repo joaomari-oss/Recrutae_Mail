@@ -238,7 +238,7 @@ export function EmailEditor({
               </p>
               <div className="bg-white rounded-xl p-4 flex items-center gap-4 border border-white/10">
                 <Image
-                  src="/logorecrutae.webp"
+                  src="/recrutae.webp"
                   alt="Recrutaê"
                   width={80}
                   height={32}
