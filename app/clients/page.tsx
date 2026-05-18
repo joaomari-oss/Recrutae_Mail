@@ -98,7 +98,7 @@ function parseRawRows(allRows: string[][]): ClientContact[] {
       }
 
       return {
-        id: `contact-${idx}-${Date.now()}`,
+        id: crypto.randomUUID(),
         firstName,
         lastName,
         fullName: fullName || email.split('@')[0],
