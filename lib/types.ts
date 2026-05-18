@@ -116,6 +116,8 @@ export type SendEmailRequest = {
   body: string
   candidateName: string
   recruiterName?: string
+  recruiterRole?: string
+  recruiterCompany?: string
   /** Reply-To header — respostas do candidato vão para este email */
   replyTo?: string
   /** Used server-side for idempotency — prevents duplicate sends */

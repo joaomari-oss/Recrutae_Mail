@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { upsertCandidateSent } from '@/lib/supabaseOps'
 
 const MAX_SEND_ATTEMPTS = 2
 
@@ -228,14 +229,16 @@ export default function SendingPage() {
           res = await apiFetch('/api/send', {
             method: 'POST',
             body: JSON.stringify({
-              to:             fresh.email,
-              subject:        fresh.editedSubject || fresh.generatedSubject,
-              body:           fresh.editedBody || fresh.generatedBody,
-              candidateName:  fresh.fullName,
-              recruiterName:  config?.recruiterName,
-              replyTo:        config?.replyTo,
+              to:               fresh.email,
+              subject:          fresh.editedSubject || fresh.generatedSubject,
+              body:             fresh.editedBody || fresh.generatedBody,
+              candidateName:    fresh.fullName,
+              recruiterName:    config?.recruiterName,
+              recruiterRole:    config?.recruiterRole,
+              recruiterCompany: config?.recruiterCompany,
+              replyTo:          config?.replyTo,
               campaignId,
-              candidateEmail: fresh.email,
+              candidateEmail:   fresh.email,
             }),
           })
           data = await res.json().catch(() => ({}))
@@ -264,6 +267,7 @@ export default function SendingPage() {
             sentAt: new Date().toISOString(),
             sentBySessionId: getSessionId(),
           })
+          upsertCandidateSent(campaignId, fresh, campaign, config, 'failed', undefined, data.error || 'Erro ao enviar.')
           failed++
           setFailedCount(failed)
         } else {
@@ -288,6 +292,7 @@ export default function SendingPage() {
             sentAt,
             sentBySessionId: getSessionId(),
           })
+          upsertCandidateSent(campaignId, fresh, campaign, config, 'sent', data.messageId)
           sent++
           setSentCount(sent)
         }
@@ -310,6 +315,7 @@ export default function SendingPage() {
           sentAt: new Date().toISOString(),
           sentBySessionId: getSessionId(),
         })
+        upsertCandidateSent(campaignId, fresh, campaign, config, 'failed', undefined, errorMessage)
         failed++
         setFailedCount(failed)
       }

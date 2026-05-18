@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { to, subject, body: emailBody, candidateName, recruiterName, replyTo, campaignId, candidateEmail } = body
+  const { to, subject, body: emailBody, candidateName, recruiterName, recruiterRole, recruiterCompany, replyTo, campaignId, candidateEmail } = body
 
   // Input validation
   if (!to || !subject || !emailBody) {
@@ -133,20 +133,59 @@ export async function POST(req: NextRequest) {
     .map((line) => {
       const safe = escapeHtml(line)
       return safe.trim() === ''
-        ? '<p style="margin:0 0 10px 0;">&nbsp;</p>'
-        : `<p style="margin:0 0 10px 0;">${safe}</p>`
+        ? '<p style="margin:0 0 14px 0;">&nbsp;</p>'
+        : `<p style="margin:0 0 14px 0;">${safe}</p>`
     })
     .join('')
 
-  // Minimal HTML — no wrapper divs, no background colors; looks like a real email
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://recrutae.com.br').replace(/\/$/, '')
+  const logoUrl = `${appUrl}/logorecrutae.webp`
+  const safeRecruiterRole = recruiterRole?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
+  const safeRecruiterCompany = recruiterCompany?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
+  const displayName = safeSenderName || 'Recrutaê'
+
+  // Plain-text signature — must mirror HTML to avoid spam penalty for mismatch
+  const textSignature = [
+    '',
+    '--',
+    displayName,
+    safeRecruiterRole,
+    safeRecruiterCompany,
+    'Recrutaê',
+  ].filter(Boolean).join('\n')
+
+  const signatureHtml = `
+<table cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;border-collapse:collapse;">
+  <tr>
+    <td style="padding-top:18px;border-top:1px solid #d0d0d8;">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr valign="middle">
+          <td style="padding-right:16px;">
+            <img src="${logoUrl}" alt="Recrutaê" width="88" height="auto"
+              style="display:block;border:0;width:88px;" />
+          </td>
+          <td style="border-left:3px solid #F5A623;padding-left:14px;">
+            <p style="margin:0;font-size:14px;font-weight:700;color:#1A1A2E;line-height:1.4;">${escapeHtml(displayName)}</p>
+            ${safeRecruiterRole ? `<p style="margin:1px 0 0 0;font-size:12px;color:#555570;line-height:1.4;">${escapeHtml(safeRecruiterRole)}</p>` : ''}
+            ${safeRecruiterCompany ? `<p style="margin:1px 0 0 0;font-size:12px;color:#555570;line-height:1.4;">${escapeHtml(safeRecruiterCompany)}</p>` : ''}
+            <p style="margin:5px 0 0 0;font-size:11px;color:#F5A623;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;">Recrutaê</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`
+
+  // Body uses padding on <body> directly (no outer wrapper div/table) — looks like a real email
   const fullHtml = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 </head>
-<body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#1a1a1a;margin:0;padding:20px;">
+<body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#1a1a1a;margin:0;padding:24px 28px;">
 ${htmlBody}
+${signatureHtml}
 </body>
 </html>`
 
@@ -159,7 +198,7 @@ ${htmlBody}
       to: [to],
       subject,
       html: fullHtml,
-      text: emailBody,
+      text: emailBody + textSignature,
       ...(effectiveReplyTo ? { reply_to: effectiveReplyTo } : {}),
       ...(campaignId ? { tags: [{ name: 'campaign_id', value: campaignId }] } : {}),
       headers: {

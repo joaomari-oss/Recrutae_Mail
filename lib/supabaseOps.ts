@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { ClientContact, ClientCampaign, ClientCampaignConfig } from './clientTypes'
+import { Candidate, Campaign, CampaignConfig } from './types'
 
 // ── Create a full campaign with all contacts ──────────────────────────────────
 export async function saveCampaignToSupabase(
@@ -129,6 +130,58 @@ export type DbCampaignRow = {
   failed_count: number
   created_at: string
   updated_at: string
+}
+
+// ── Upsert campaign + contact after a send attempt (current app types) ────────
+export async function upsertCandidateSent(
+  campaignId: string,
+  candidate: Candidate,
+  campaign: Campaign | null | undefined,
+  config: CampaignConfig | null | undefined,
+  status: 'sent' | 'failed',
+  messageId?: string,
+  errorMessage?: string
+): Promise<void> {
+  if (!supabase) return
+
+  const { error: campErr } = await supabase.from('client_campaigns').upsert(
+    {
+      id: campaignId,
+      name: campaign?.name || 'Campanha',
+      recruiter_name: config?.recruiterName || 'Recrutador',
+      recruiter_email: config?.replyTo || '',
+      segment: config?.recruiterCompany || config?.hiringCompany || 'Recrutaê',
+      key_points: config?.jobDescription || null,
+      status: campaign?.status || 'completed',
+      contact_count: campaign?.totalCandidates || 0,
+      sent_count: campaign?.sentCount || 0,
+      failed_count: campaign?.failedCount || 0,
+    },
+    { onConflict: 'id' }
+  )
+  if (campErr) console.error('[supabase] upsert campaign:', campErr.message)
+
+  const { error: contErr } = await supabase.from('client_contacts').upsert(
+    {
+      id: candidate.id,
+      campaign_id: campaignId,
+      name: candidate.fullName,
+      first_name: candidate.firstName,
+      email: candidate.email,
+      company: candidate.company || null,
+      position: candidate.title || null,
+      status,
+      generated_subject: candidate.generatedSubject || null,
+      generated_body: candidate.generatedBody || null,
+      edited_subject: candidate.editedSubject || null,
+      edited_body: candidate.editedBody || null,
+      message_id: messageId || null,
+      error_message: errorMessage || null,
+      sent_at: status === 'sent' ? new Date().toISOString() : null,
+    },
+    { onConflict: 'id' }
+  )
+  if (contErr) console.error('[supabase] upsert contact:', contErr.message)
 }
 
 export type DbContactRow = {
