@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store'
 import { CampaignConfig } from '@/lib/types'
+import { saveCampaignAndContacts } from '@/lib/supabaseOps'
 import {
   ArrowLeft,
   Sparkles,
@@ -161,9 +162,12 @@ export default function CampaignPage() {
 
   const handleSubmit = () => {
     if (!validate() || !activeCampaignId) return
-    if (campaignName.trim()) updateCampaign(activeCampaignId, { name: campaignName.trim() })
+    const finalName = campaignName.trim() || currentCampaign?.name || 'Campanha'
+    if (campaignName.trim()) updateCampaign(activeCampaignId, { name: finalName })
     setCampaignConfig(activeCampaignId, form)
     updateCampaign(activeCampaignId, { status: 'generating' })
+    // Fire-and-forget — don't block navigation on DB write
+    saveCampaignAndContacts(activeCampaignId, finalName, candidates, form)
     router.push('/review')
   }
 

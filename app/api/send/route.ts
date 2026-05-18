@@ -6,14 +6,14 @@ import { SendEmailRequest } from '@/lib/types'
 import { validateApiKey, unauthorizedResponse } from '@/lib/api-auth'
 import { checkRateLimit } from '@/lib/rate-limiter'
 
-// Read logo once at module load — embedded as base64 so it always shows in email clients
-// regardless of whether the app URL is public or localhost
-let LOGO_DATA_URI = ''
-try {
-  const buf = readFileSync(join(process.cwd(), 'public', 'logorecrutae.webp'))
-  LOGO_DATA_URI = `data:image/webp;base64,${buf.toString('base64')}`
-} catch {
-  // Will fall back to URL in signatureHtml
+function getLogoDataUri(): string {
+  try {
+    const buf = readFileSync(join(process.cwd(), 'public', 'logorecrutae.webp'))
+    return `data:image/webp;base64,${buf.toString('base64')}`
+  } catch (e) {
+    console.error('[send] Failed to read logo file:', e)
+    return ''
+  }
 }
 
 // In-memory registry of sent emails — prevents duplicate sends within a process lifetime
@@ -155,8 +155,7 @@ export async function POST(req: NextRequest) {
     })
     .join('')
 
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://recrutae.com.br').replace(/\/$/, '')
-  const logoSrc = LOGO_DATA_URI || `${appUrl}/logorecrutae.webp`
+  const logoSrc = getLogoDataUri()
   const safeRecruiterRole = recruiterRole?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
   const safeRecruiterCompany = recruiterCompany?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
   const displayName = safeSenderName || 'Recrutaê'

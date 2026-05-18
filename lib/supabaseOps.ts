@@ -132,6 +132,53 @@ export type DbCampaignRow = {
   updated_at: string
 }
 
+// ── Save campaign + all contacts when campaign config is submitted ────────────
+export async function saveCampaignAndContacts(
+  campaignId: string,
+  campaignName: string,
+  candidates: Candidate[],
+  config: CampaignConfig
+): Promise<void> {
+  if (!supabase) return
+
+  const { error: campErr } = await supabase.from('client_campaigns').upsert(
+    {
+      id: campaignId,
+      name: campaignName,
+      recruiter_name: config.recruiterName,
+      recruiter_email: config.replyTo || '',
+      segment: config.recruiterCompany || config.hiringCompany || '',
+      key_points: config.jobDescription || null,
+      status: 'generating',
+      contact_count: candidates.length,
+      sent_count: 0,
+      failed_count: 0,
+    },
+    { onConflict: 'id' }
+  )
+  if (campErr) {
+    console.error('[supabase] save campaign:', campErr.message)
+    return
+  }
+
+  if (!candidates.length) return
+
+  const { error: contErr } = await supabase.from('client_contacts').upsert(
+    candidates.map((c) => ({
+      id: c.id,
+      campaign_id: campaignId,
+      name: c.fullName,
+      first_name: c.firstName,
+      email: c.email,
+      company: c.company || null,
+      position: c.title || null,
+      status: c.status,
+    })),
+    { onConflict: 'id' }
+  )
+  if (contErr) console.error('[supabase] save contacts:', contErr.message)
+}
+
 // ── Load all campaigns + contacts from Supabase for cross-device sync ─────────
 export async function syncAllFromSupabase(): Promise<{
   campaigns: Campaign[]

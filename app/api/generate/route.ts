@@ -31,13 +31,8 @@ ESTRUTURA DO EMAIL (siga esta ordem exata):
 6. Link para mais informacoes (se fornecido)
 7. Paragrafo de indicacoes (se houver link)
 8. CTA suave
-9. Assinatura
-
-9. Assinatura OBRIGATORIA (sempre ao final):
+9. Fechamento OBRIGATORIO (sempre ao final, SEM nome do recrutador — a assinatura e adicionada automaticamente):
    "Abraços,"
-   [linha em branco]
-   {recruiterName}
-   {recruiterRole (se fornecido)}
 
 REGRA CRITICA DE SAUDACAO:
 - A PRIMEIRA LINHA do email DEVE ser SEMPRE: "Olá, {firstName}!"
@@ -61,9 +56,10 @@ Para mais informacoes:
 
 Se fizer sentido para voce, fico a disposicao para conversarmos melhor.
 
-Abracos,
+Abracos,"
 
-{recruiterName}"
+REGRA CRITICA DE ASSINATURA: O body DEVE terminar com "Abraços," e NADA MAIS.
+NAO inclua nome do recrutador, cargo, empresa ou qualquer texto apos "Abraços," — a assinatura visual e gerada automaticamente pelo sistema.
 
 VARIACAO CONTROLADA (MUITO IMPORTANTE):
 - Mantenha a MESMA estrutura em todos os emails
@@ -119,17 +115,12 @@ ANTI-SPAM (MUITO IMPORTANTE):
 - Construa credibilidade: cite a empresa com naturalidade, nao de forma promocional
 - A saudacao "Olá, {firstName}!" adiciona legitimidade (emails spammers usam "Prezado(a)" ou "Caro(a)")
 
-REGRAS DO ASSUNTO (CRITICAS PARA NAO CAI EM SPAM):
-- NUNCA comece o assunto com palavras como: "Oportunidade", "Vaga", "Oferta", "Urgente", "Exclusivo"
-- Prefira assuntos curtos, conversacionais e curiosos como: "Posição em {empresa}", "{cargo} — {empresa}", "Uma posição para você"
-- Maximo 55 caracteres
-- Sem emojis, sem CAPS LOCK, sem pontos de exclamacao no assunto
-- O assunto deve parecer que foi escrito por uma pessoa, nao por um sistema automatizado
-
-REGRAS DO ASSUNTO (varie entre eles):
-- "{role} na {hiringCompany}"
-- "Oportunidade: {role} | {hiringCompany}"
-- "{role} | {hiringCompany}"
+REGRA DO ASSUNTO (OBRIGATORIA — nao desvie):
+- O assunto SEMPRE deve seguir este formato EXATO:
+  "Apresentação Recrutaê — {role} | Indicação {recruiterCompany}"
+- Exemplo: "Apresentação Recrutaê — Desenvolvedor Backend Sênior | Indicação Find HR"
+- Use o valor exato de {role} e {recruiterCompany} fornecidos no prompt do usuario.
+- NAO invente ou altere este formato.
 
 FORMATO DE SAIDA - Retorne APENAS um JSON valido, sem markdown, sem texto extra:
 {
@@ -145,33 +136,39 @@ function buildUserPrompt(
   jobDescription: string,
   link: string | undefined,
   recruiterName: string,
+  recruiterCompany: string,
   recruiterRole?: string,
 ): string {
-  const signatureLines = [
-    recruiterName,
-    recruiterRole || '',
-  ].filter(Boolean).join('\n')
-
   return `Gere um email de abordagem de recrutamento para este candidato:
 
 firstName: ${firstName}
 role: ${role}
 hiringCompany: ${hiringCompany}
+recruiterCompany: ${recruiterCompany}
 jobDescription: ${jobDescription}
 link: ${link || 'nenhum'}
 recruiterName: ${recruiterName}
 recruiterRole: ${recruiterRole || 'não informado'}
 
-IMPORTANTE: A oportunidade é na "${hiringCompany}". Use "${hiringCompany}" como nome da empresa no email e no assunto. NAO use o nome da empresa do recrutador.
+IMPORTANTE: A oportunidade é na "${hiringCompany}". Use "${hiringCompany}" como nome da empresa no email. NAO use o nome da empresa do recrutador.
 
-REGRA CRITICA: O body DEVE comecar EXATAMENTE com "Olá, ${firstName}!" (com acento no a, virgula, nome e exclamacao).
+REGRA CRITICA DO BODY:
+- DEVE comecar EXATAMENTE com "Olá, ${firstName}!"
+- DEVE terminar EXATAMENTE com "Abraços," e NADA MAIS depois disso.
+- NAO inclua nome, cargo, empresa ou qualquer texto apos "Abraços,".
 
-ASSINATURA OBRIGATORIA: O email DEVE terminar com:
-Abraços,
-
-${signatureLines}
+REGRA CRITICA DO SUBJECT:
+- DEVE ser EXATAMENTE: "Apresentação Recrutaê — ${role} | Indicação ${recruiterCompany}"
 
 Retorne apenas o JSON com os campos "subject" e "body". Escreva inteiramente em portugues brasileiro com acentos corretos.`
+}
+
+function stripTrailingSignature(body: string): string {
+  // Remove any text after "Abraços," — the HTML signature is added automatically
+  return body
+    .replace(/(\n{0,3}(Abraços|Abra[cç]os)[,.]?\s*\n[\s\S]*)$/, '\n\nAbraços,')
+    .replace(/(Abraços[,.]?\s*\n[\s\S]+)$/, 'Abraços,')
+    .trimEnd()
 }
 
 function ensureGreeting(body: string, firstName: string): string {
@@ -198,10 +195,10 @@ function parseAIResponse(content: string, firstName?: string): { subject: string
     if (!jsonMatch) return null
     const parsed = JSON.parse(jsonMatch[0])
     if (parsed.subject && parsed.body) {
-      return {
-        subject: parsed.subject,
-        body: firstName ? ensureGreeting(parsed.body, firstName) : parsed.body,
-      }
+      const cleanBody = stripTrailingSignature(
+        firstName ? ensureGreeting(parsed.body, firstName) : parsed.body
+      )
+      return { subject: parsed.subject, body: cleanBody }
     }
     return null
   } catch {
@@ -314,7 +311,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Corpo da requisicao invalido.' }, { status: 400 })
   }
 
-  const { candidate, role, jobDescription, link, hiringCompany, recruiterName, recruiterRole, aiProvider } = body
+  const { candidate, role, jobDescription, link, hiringCompany, recruiterName, recruiterCompany, recruiterRole, aiProvider } = body
 
   if (!candidate || !role || !jobDescription || !recruiterName || !hiringCompany) {
     return NextResponse.json({ error: 'Dados obrigatorios ausentes.' }, { status: 400 })
@@ -329,15 +326,21 @@ export async function POST(req: NextRequest) {
     jobDescription,
     link,
     recruiterName,
+    recruiterCompany || '',
     recruiterRole,
   )
+
+  // Subject is always deterministic — don't trust the AI to get the format right
+  const forcedSubject = recruiterCompany
+    ? `Apresentação Recrutaê — ${role} | Indicação ${recruiterCompany}`
+    : `Apresentação Recrutaê — ${role}`
 
   try {
     const result = provider === 'groq'
       ? await generateWithGroq(systemPrompt, userPrompt, candidate.firstName)
       : await generateWithOpenAI(systemPrompt, userPrompt, candidate.firstName)
 
-    return NextResponse.json({ subject: result.subject, body: result.body })
+    return NextResponse.json({ subject: forcedSubject, body: result.body })
   } catch (err) {
     console.error(`[/api/generate] ${provider} error:`, err)
 
