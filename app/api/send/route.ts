@@ -137,6 +137,8 @@ export async function POST(req: NextRequest) {
   const senderName = safeSenderName || 'Recrutaê'
   const from = `${senderName} <${fromEmail}>`
 
+  const FONT = `'Helvetica Neue', Helvetica, Arial, sans-serif`
+
   const escapeHtml = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -145,13 +147,12 @@ export async function POST(req: NextRequest) {
     .map((line) => {
       const safe = escapeHtml(line)
       const trimmed = safe.trim()
-      if (trimmed === '') return '<p style="margin:0 0 14px 0;">&nbsp;</p>'
-      // Make URLs clickable with legible blue
+      if (trimmed === '') return `<p style="margin:0 0 8px 0;font-family:${FONT};">&nbsp;</p>`
       const linked = trimmed.replace(
         /(https?:\/\/[^\s<]+)/g,
-        '<a href="$1" style="color:#2563eb;text-decoration:underline;">$1</a>'
+        `<a href="$1" style="color:#E8603A;font-family:${FONT};text-decoration:underline;font-weight:500;">$1</a>`
       )
-      return `<p style="margin:0 0 14px 0;">${linked}</p>`
+      return `<p style="margin:0 0 16px 0;font-family:${FONT};font-size:15px;line-height:1.75;color:#1a1a2e;">${linked}</p>`
     })
     .join('')
 
@@ -170,21 +171,24 @@ export async function POST(req: NextRequest) {
     'Recrutaê',
   ].filter(Boolean).join('\n')
 
+  const logoBlock = logoSrc
+    ? `<img src="${logoSrc}" alt="Recrutaê" width="100" height="auto" style="display:block;border:0;width:100px;max-width:100px;" />`
+    : `<p style="margin:0;font-family:${FONT};font-size:16px;font-weight:700;color:#1a1a2e;">Recrutaê</p>`
+
   const signatureHtml = `
-<table cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;border-collapse:collapse;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:32px;">
   <tr>
-    <td style="padding-top:18px;border-top:1px solid #d0d0d8;">
-      <table cellpadding="0" cellspacing="0" border="0">
-        <tr valign="middle">
-          <td style="padding-right:16px;">
-            <img src="${logoSrc}" alt="Recrutaê" width="88" height="auto"
-              style="display:block;border:0;width:88px;" />
+    <td style="border-top:1px solid #e5e5ea;padding-top:24px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="padding-right:20px;vertical-align:middle;">
+            ${logoBlock}
           </td>
-          <td style="border-left:3px solid #F5A623;padding-left:14px;">
-            <p style="margin:0;font-size:14px;font-weight:700;color:#111827;line-height:1.4;">${escapeHtml(displayName)}</p>
-            ${safeRecruiterRole ? `<p style="margin:1px 0 0 0;font-size:12px;color:#555570;line-height:1.4;">${escapeHtml(safeRecruiterRole)}</p>` : ''}
-            ${safeRecruiterCompany ? `<p style="margin:1px 0 0 0;font-size:12px;color:#555570;line-height:1.4;">${escapeHtml(safeRecruiterCompany)}</p>` : ''}
-            <p style="margin:5px 0 0 0;font-size:11px;color:#F5A623;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;">Recrutaê</p>
+          <td style="border-left:3px solid #F5A623;padding-left:16px;vertical-align:middle;">
+            <p style="margin:0;font-family:${FONT};font-size:15px;font-weight:700;color:#1a1a2e;line-height:1.3;">${escapeHtml(displayName)}</p>
+            ${safeRecruiterRole ? `<p style="margin:3px 0 0 0;font-family:${FONT};font-size:13px;color:#6b7280;line-height:1.4;">${escapeHtml(safeRecruiterRole)}</p>` : ''}
+            ${safeRecruiterCompany ? `<p style="margin:2px 0 0 0;font-family:${FONT};font-size:13px;color:#6b7280;line-height:1.4;">${escapeHtml(safeRecruiterCompany)}</p>` : ''}
+            <p style="margin:6px 0 0 0;font-family:${FONT};font-size:11px;font-weight:700;color:#F5A623;letter-spacing:1px;text-transform:uppercase;">Recrutaê</p>
           </td>
         </tr>
       </table>
@@ -192,7 +196,6 @@ export async function POST(req: NextRequest) {
   </tr>
 </table>`
 
-  // Body uses table-based layout for Outlook compatibility
   const fullHtml = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -203,15 +206,35 @@ export async function POST(req: NextRequest) {
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 <!--<![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#ffffff;">
+<body style="margin:0;padding:0;background-color:#f5f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f5f5f7;">
   <tr>
-    <td style="padding:28px 32px 32px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:600px;margin:0 auto;">
+    <td style="padding:32px 16px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:600px;margin:0 auto;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <!-- Header bar -->
         <tr>
-          <td style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.75;color:#111827;">
-            ${htmlBody}
-            ${signatureHtml}
+          <td style="background-color:#1a1a2e;padding:0;height:4px;"></td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:36px 40px 32px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td style="font-family:${FONT};font-size:15px;line-height:1.75;color:#1a1a2e;">
+                  ${htmlBody}
+                  ${signatureHtml}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="background-color:#f9f9fb;border-top:1px solid #e5e5ea;padding:16px 40px;">
+            <p style="margin:0;font-family:${FONT};font-size:11px;color:#9ca3af;line-height:1.5;text-align:center;">
+              Você recebeu este email porque seu perfil foi identificado como relevante para esta oportunidade.<br />
+              Para não receber mais emails, responda com "cancelar".
+            </p>
           </td>
         </tr>
       </table>

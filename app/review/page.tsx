@@ -88,6 +88,7 @@ export default function ReviewPage() {
               recruiterCompany: campaignConfig.recruiterCompany,
               recruiterRole: campaignConfig.recruiterRole,
               aiProvider: currentProvider,
+              subjectTemplate: campaignConfig.subjectTemplate,
             }),
           })
           const data = await res.json()
@@ -117,6 +118,7 @@ export default function ReviewPage() {
                     recruiterCompany: campaignConfig.recruiterCompany,
                     recruiterRole: campaignConfig.recruiterRole,
                     aiProvider: altProvider,
+                    subjectTemplate: campaignConfig.subjectTemplate,
                   }),
                 })
                 const retryData = await retryRes.json()
@@ -220,6 +222,7 @@ export default function ReviewPage() {
         recruiterCompany: campaignConfig.recruiterCompany,
         recruiterRole: campaignConfig.recruiterRole,
         aiProvider: campaignConfig.aiProvider,
+        subjectTemplate: campaignConfig.subjectTemplate,
       }),
     })
       .then((r) => r.json())
@@ -258,7 +261,9 @@ export default function ReviewPage() {
               hiringCompany: campaignConfig.hiringCompany,
               recruiterName: campaignConfig.recruiterName,
               recruiterCompany: campaignConfig.recruiterCompany,
+              recruiterRole: campaignConfig.recruiterRole,
               aiProvider: campaignConfig.aiProvider,
+              subjectTemplate: campaignConfig.subjectTemplate,
             }),
           })
           const data = await res.json()

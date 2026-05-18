@@ -311,7 +311,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Corpo da requisicao invalido.' }, { status: 400 })
   }
 
-  const { candidate, role, jobDescription, link, hiringCompany, recruiterName, recruiterCompany, recruiterRole, aiProvider } = body
+  const { candidate, role, jobDescription, link, hiringCompany, recruiterName, recruiterCompany, recruiterRole, aiProvider, subjectTemplate } = body as GenerateEmailRequest & { subjectTemplate?: string }
 
   if (!candidate || !role || !jobDescription || !recruiterName || !hiringCompany) {
     return NextResponse.json({ error: 'Dados obrigatorios ausentes.' }, { status: 400 })
@@ -330,10 +330,11 @@ export async function POST(req: NextRequest) {
     recruiterRole,
   )
 
-  // Subject is always deterministic — don't trust the AI to get the format right
-  const forcedSubject = recruiterCompany
-    ? `Apresentação Recrutaê — ${role} | Indicação ${recruiterCompany}`
-    : `Apresentação Recrutaê — ${role}`
+  // Subject: use recruiter's template if provided, otherwise compute deterministically
+  const forcedSubject = subjectTemplate?.trim() ||
+    (recruiterCompany
+      ? `Apresentação Recrutaê — ${role} | Indicação ${recruiterCompany}`
+      : `Apresentação Recrutaê — ${role}`)
 
   try {
     const result = provider === 'groq'
