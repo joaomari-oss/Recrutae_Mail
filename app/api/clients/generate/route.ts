@@ -39,16 +39,18 @@ Retorne APENAS JSON válido no formato: { "subject": "...", "body": "..." }
 O body usa \\n para quebras de linha.`
 }
 
+function stripTrailingSignature(body: string): string {
+  // Remove anything after the closing salutation — visual signature is added by the HTML template
+  return body
+    .replace(/(\n{0,3}(Abraços|Abra[cç]os|Atenciosamente|Att\.?)[,.]?\s*\n[\s\S]*)$/, '\n\nAbraços,')
+    .replace(/((Abraços|Abra[cç]os|Atenciosamente|Att\.?)[,.]?\s*\n[\s\S]+)$/, '$2,')
+    .trimEnd()
+}
+
 function buildUserPrompt(req: GenerateClientEmailRequest): string {
-  const { contact, recruiterName, recruiterRole, segment, emailTemplate, variationSeed } = req
+  const { contact, segment, emailTemplate, variationSeed } = req
   const firstName = contact.firstName || contact.fullName.split(' ')[0] || 'pessoal'
 
-  const signatureParts = [
-    recruiterName,
-    recruiterRole || '',
-  ].filter(Boolean).join('\n')
-
-  // Subtle variation hint based on seed to help the model vary phrasing
   const variationHints = [
     'Varie especialmente a primeira frase após a saudação.',
     'Varie especialmente os conectores entre parágrafos.',
@@ -70,8 +72,8 @@ CONTATO A PERSONALIZAR:
 - Cargo: ${contact.position || 'não informado'}
 - Segmento: ${segment}
 
-ASSINATURA OBRIGATÓRIA (use exatamente no final do body):
-${signatureParts}
+REGRA CRÍTICA DE ASSINATURA: O body deve terminar com a saudação de fechamento do template (ex: "Abraços," ou "Atenciosamente,") e NADA MAIS depois disso.
+NÃO inclua nome do recrutador, cargo ou qualquer texto após o fechamento — a assinatura visual é gerada automaticamente pelo sistema.
 
 INSTRUÇÃO: Adapte o template acima para este contato específico. Substitua marcadores e referências genéricas pelos dados reais. ${hint} Preserve a mensagem e estrutura originais.`
 }
@@ -108,7 +110,7 @@ export async function POST(request: NextRequest) {
       const subject = subjectTemplate?.trim()
         ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
         : parsed.subject
-      return NextResponse.json({ subject, body: parsed.body })
+      return NextResponse.json({ subject, body: stripTrailingSignature(parsed.body) })
     }
 
     // OpenAI (default)
@@ -129,7 +131,7 @@ export async function POST(request: NextRequest) {
       const subject = subjectTemplate?.trim()
         ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
         : parsed.subject
-      return NextResponse.json({ subject, body: parsed.body })
+      return NextResponse.json({ subject, body: stripTrailingSignature(parsed.body) })
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
       if (status === 429) {

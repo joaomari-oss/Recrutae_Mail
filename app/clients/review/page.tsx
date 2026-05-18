@@ -403,10 +403,24 @@ export default function ClientsReviewPage() {
                     <textarea
                       value={localBody}
                       onChange={(e) => { setLocalBody(e.target.value); saveEdits(localSubject, e.target.value) }}
-                      rows={16}
+                      rows={14}
                       className="w-full px-4 py-3 bg-brand-charcoal border border-white/8 rounded-xl text-sm text-brand-white outline-none focus:border-brand-coral/40 transition-colors resize-none email-body leading-relaxed"
                     />
                   </div>
+
+                  {/* Signature preview */}
+                  <div className="rounded-xl border border-white/8 bg-white px-5 py-4">
+                    <div className="border-t border-gray-200 pt-4 mt-1 flex items-center gap-4">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src="/logorecrutae.webp" alt="Recrutaê" width={80} style={{ display: 'block', flexShrink: 0 }} />
+                      <div style={{ borderLeft: '3px solid #F5A623', paddingLeft: '14px' }}>
+                        <p style={{ margin: 0, fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: '14px', fontWeight: 700, color: '#1a1a2e', lineHeight: 1.3 }}>{config.recruiterName}</p>
+                        {config.recruiterRole && <p style={{ margin: '3px 0 0', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: '12px', color: '#6b7280', lineHeight: 1.4 }}>{config.recruiterRole}</p>}
+                        <p style={{ margin: '5px 0 0', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: '10px', fontWeight: 700, color: '#F5A623', letterSpacing: '1px', textTransform: 'uppercase' }}>Recrutaê</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-2 text-xs text-brand-muted/50">
                     <span>[A] Aprovar</span>
                     <span>·</span>
