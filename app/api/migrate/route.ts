@@ -123,8 +123,9 @@ export async function GET() {
     )
   }
 
-  // Test write: insert a probe row then immediately delete it
-  const probeId = `_migrate_probe_${Date.now()}`
+  // Test write: insert a probe row then immediately delete it.
+  // Use a valid UUID so the insert works whether the id column is 'uuid' or 'text'.
+  const probeId = crypto.randomUUID()
   const { error: insertErr } = await db.from('client_campaigns').insert({
     id: probeId,
     name: '__probe__',
