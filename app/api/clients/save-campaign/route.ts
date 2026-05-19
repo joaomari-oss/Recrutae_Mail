@@ -21,7 +21,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<SaveCampa
     return NextResponse.json({ success: false, error: 'Body inválido.' }, { status: 400 })
   }
 
-  const { campaign, contacts, config } = body
+  const { campaign, contacts = [], config } = body
 
   if (!campaign?.id || !campaign?.name) {
     return NextResponse.json({ success: false, error: 'Dados da campanha incompletos.' }, { status: 400 })
