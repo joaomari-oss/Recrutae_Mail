@@ -32,9 +32,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<SaveCampa
     {
       id: campaign.id,
       name: campaign.name,
-      recruiter_name: config.recruiterName,
-      recruiter_email: config.recruiterEmail,
-      segment: config.segment,
+      recruiter_name: config.recruiterName ?? '',
+      recruiter_email: config.recruiterEmail ?? '',
+      segment: config.segment ?? '',
       key_points: config.emailTemplate || null,
       status: campaign.status,
       contact_count: contacts.length,

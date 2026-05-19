@@ -66,6 +66,15 @@ do $$ begin
   end if;
 end $$;
 
+-- Garantir defaults em colunas NOT NULL (tabelas criadas com schema antigo podem não ter)
+alter table client_campaigns alter column recruiter_name  set default '';
+alter table client_campaigns alter column recruiter_email set default '';
+alter table client_campaigns alter column segment         set default '';
+alter table client_campaigns alter column status          set default 'draft';
+alter table client_campaigns alter column contact_count   set default 0;
+alter table client_campaigns alter column sent_count      set default 0;
+alter table client_campaigns alter column failed_count    set default 0;
+
 -- RLS — habilita e cria políticas permissivas (necessário para chave anon)
 alter table client_campaigns enable row level security;
 alter table client_contacts  enable row level security;
@@ -124,11 +133,15 @@ export async function GET() {
   }
 
   // Test write: insert a probe row then immediately delete it.
-  // Use a valid UUID so the insert works whether the id column is 'uuid' or 'text'.
+  // Include all NOT NULL fields so the insert works regardless of whether
+  // the column defaults have been applied via the migration SQL.
   const probeId = crypto.randomUUID()
   const { error: insertErr } = await db.from('client_campaigns').insert({
     id: probeId,
     name: '__probe__',
+    recruiter_name: '',
+    recruiter_email: '',
+    segment: '',
     status: 'draft',
     contact_count: 0,
     sent_count: 0,

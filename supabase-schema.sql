@@ -75,6 +75,15 @@ do $$ begin
   end if;
 end $$;
 
+-- Garantir defaults em colunas NOT NULL criadas sem default no schema original
+alter table client_campaigns alter column recruiter_name  set default '';
+alter table client_campaigns alter column recruiter_email set default '';
+alter table client_campaigns alter column segment         set default '';
+alter table client_campaigns alter column status          set default 'draft';
+alter table client_campaigns alter column contact_count   set default 0;
+alter table client_campaigns alter column sent_count      set default 0;
+alter table client_campaigns alter column failed_count    set default 0;
+
 -- Auto-update updated_at trigger
 create or replace function update_updated_at()
 returns trigger as $$
