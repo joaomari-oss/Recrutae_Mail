@@ -3,7 +3,7 @@ import { Resend } from 'resend'
 import { SendEmailRequest } from '@/lib/types'
 import { validateApiKey, unauthorizedResponse } from '@/lib/api-auth'
 import { checkRateLimit } from '@/lib/rate-limiter'
-import { LOGO_DATA_URI } from '@/lib/logoBase64'
+import { getLogoUrl } from '@/lib/getLogoUrl'
 
 // In-memory registry of sent emails — prevents duplicate sends within a process lifetime
 const sentRegistry = new Map<string, { messageId: string; sentAt: string }>()
@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
     })
     .join('')
 
-  const logoSrc = LOGO_DATA_URI
+  const logoSrc = getLogoUrl()
   const safeRecruiterRole = recruiterRole?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
   const safeRecruiterCompany = recruiterCompany?.replace(/[\r\n<>]/g, '').trim().slice(0, 100) || ''
   const displayName = safeSenderName || 'Recrutaê'

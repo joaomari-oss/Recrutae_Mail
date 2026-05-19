@@ -3,7 +3,7 @@ import { Resend } from 'resend'
 import { SendClientEmailRequest, SendClientEmailResponse } from '@/lib/clientTypes'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { supabase } from '@/lib/supabase'
-import { LOGO_DATA_URI } from '@/lib/logoBase64'
+import { getLogoUrl } from '@/lib/getLogoUrl'
 
 const db = supabaseAdmin ?? supabase
 
@@ -34,7 +34,7 @@ function buildHtml(
     return `<p style="margin:0 0 16px 0;font-family:${FONT};font-size:15px;line-height:1.75;color:#1a1a2e;">${linked}</p>`
   }).join('')
 
-  const logoSrc = LOGO_DATA_URI
+  const logoSrc = getLogoUrl()
   const safeName = escapeHtml(recruiterName || 'Recrutaê')
   const safeRole = escapeHtml(recruiterRole || '')
 
