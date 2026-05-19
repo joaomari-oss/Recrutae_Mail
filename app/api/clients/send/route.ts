@@ -48,7 +48,7 @@ function buildHtml(
     <td style="border-top:1px solid #e5e5ea;padding-top:24px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
         <tr>
-          <td style="padding-right:20px;vertical-align:middle;">${logoBlock}</td>
+          <td style="padding-right:20px;vertical-align:middle;background-color:#ffffff;border-radius:8px;padding:8px 16px 8px 8px;">${logoBlock}</td>
           <td style="border-left:3px solid #F5A623;padding-left:16px;vertical-align:middle;">
             <p style="margin:0;font-family:${FONT};font-size:15px;font-weight:700;color:#1a1a2e;line-height:1.3;">${safeName}</p>
             ${safeRole ? `<p style="margin:3px 0 0 0;font-family:${FONT};font-size:13px;color:#6b7280;line-height:1.4;">${safeRole}</p>` : ''}
@@ -146,6 +146,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
       html: buildHtml(emailBody, safeName, safeRole, recruiterEmail),
       text: emailBody,
       reply_to: effectiveReplyTo,
+      tags: [
+        ...(campaignId ? [{ name: 'campaign_id', value: campaignId }] : []),
+        ...(contactId ? [{ name: 'contact_id', value: contactId }] : []),
+      ],
       headers: {
         'List-Unsubscribe': `<mailto:${effectiveReplyTo}?subject=unsubscribe>`,
         'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',

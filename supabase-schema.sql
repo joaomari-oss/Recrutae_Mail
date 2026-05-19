@@ -133,12 +133,17 @@ create table if not exists email_events (
   id              uuid        default gen_random_uuid() primary key,
   message_id      text        not null,
   campaign_id     text,
+  contact_id      text,
   recipient_email text,
   event_type      text        not null default 'opened',
   received_at     timestamptz default now()
 );
 
+-- Add contact_id column if table already exists without it
+alter table email_events add column if not exists contact_id text;
+
 create index if not exists email_events_campaign_id_idx on email_events(campaign_id);
+create index if not exists email_events_contact_id_idx  on email_events(contact_id);
 create index if not exists email_events_message_id_idx  on email_events(message_id);
 create index if not exists email_events_received_at_idx on email_events(received_at desc);
 

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useClientStore } from '@/store/clientStore'
 import { loadCampaignsFromSupabase, DbCampaignRow } from '@/lib/supabaseOps'
 import { isSupabaseConfigured } from '@/lib/supabase'
-import { Building2, Plus, Trash2, ChevronRight, Users, Database, HardDrive, RefreshCw } from 'lucide-react'
+import { Building2, Plus, Trash2, ChevronRight, Users, Database, HardDrive, RefreshCw, Eye, MousePointerClick } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const statusLabel: Record<string, string> = {
@@ -33,29 +33,49 @@ export default function ClientCampaignsPage() {
   const [rows, setRows] = useState<CampaignRow[]>([])
   const [loading, setLoading] = useState(false)
   const [source, setSource] = useState<'supabase' | 'local'>('local')
+  const [eventStats, setEventStats] = useState<Map<string, { opened: number; clicked: number }>>(new Map())
+
+  const fetchEventStats = async (campaignIds: string[]) => {
+    const ids = campaignIds.filter(Boolean)
+    if (!ids.length) return
+    const results = await Promise.allSettled(
+      ids.map((id) => fetch(`/api/clients/events?campaignId=${id}`).then((r) => r.ok ? r.json() : null))
+    )
+    const map = new Map<string, { opened: number; clicked: number }>()
+    results.forEach((r, idx) => {
+      if (r.status === 'fulfilled' && r.value) {
+        map.set(ids[idx], { opened: r.value.totalOpened ?? 0, clicked: r.value.totalClicked ?? 0 })
+      }
+    })
+    setEventStats(map)
+  }
 
   const loadData = async () => {
     setLoading(true)
     if (isSupabaseConfigured()) {
       const data = await loadCampaignsFromSupabase()
       setSource('supabase')
-      setRows(data.map((d: DbCampaignRow) => ({
+      const mapped = data.map((d: DbCampaignRow) => ({
         id: d.id, name: d.name, segment: d.segment, status: d.status,
         recruiter_email: d.recruiter_email, recruiter_name: d.recruiter_name,
         contact_count: d.contact_count, sent_count: d.sent_count, failed_count: d.failed_count,
         created_at: d.created_at, source: 'supabase' as const,
-      })))
+      }))
+      setRows(mapped)
       setLoading(false)
+      fetchEventStats(mapped.map((r) => r.id))
       return
     }
     // Fallback to localStorage (Supabase not configured)
     setSource('local')
-    setRows(localCampaigns.map((c) => ({
+    const mapped = localCampaigns.map((c) => ({
       id: c.id, name: c.name, segment: c.segment, status: c.status,
       contact_count: c.totalContacts, sent_count: c.sentCount, failed_count: c.failedCount,
       created_at: c.createdAt, source: 'local' as const,
-    })))
+    }))
+    setRows(mapped)
     setLoading(false)
+    fetchEventStats(mapped.map((r) => r.id))
   }
 
   useEffect(() => { loadData() }, [])
@@ -138,7 +158,9 @@ export default function ClientCampaignsPage() {
         {/* Campaigns list */}
         {rows.length > 0 && (
           <div className="space-y-3">
-            {rows.map((campaign, i) => (
+            {rows.map((campaign, i) => {
+              const ev = eventStats.get(campaign.id)
+              return (
               <div
                 key={campaign.id}
                 className="group flex items-center gap-4 p-5 rounded-2xl bg-brand-charcoal border border-white/[0.06] hover:border-brand-coral/20 hover:shadow-[0_8px_32px_rgba(0,0,0,0.3)] transition-all duration-300 animate-fade-up opacity-0"
@@ -162,7 +184,7 @@ export default function ClientCampaignsPage() {
                   {campaign.recruiter_name && (
                     <p className="text-xs text-brand-muted/60 mt-0.5 truncate">{campaign.recruiter_name} · {campaign.recruiter_email}</p>
                   )}
-                  <div className="flex items-center gap-3 mt-1.5 text-xs text-brand-muted/60">
+                  <div className="flex items-center gap-3 mt-1.5 text-xs text-brand-muted/60 flex-wrap">
                     <span className="flex items-center gap-1">
                       <Users className="h-3 w-3" />{campaign.contact_count} contatos
                     </span>
@@ -171,6 +193,16 @@ export default function ClientCampaignsPage() {
                     )}
                     {campaign.failed_count > 0 && (
                       <span className="text-brand-error">{campaign.failed_count} falhas</span>
+                    )}
+                    {ev && ev.opened > 0 && (
+                      <span className="flex items-center gap-1 text-brand-coral font-medium">
+                        <Eye className="h-3 w-3" />{ev.opened} abriram
+                      </span>
+                    )}
+                    {ev && ev.clicked > 0 && (
+                      <span className="flex items-center gap-1 text-brand-warning font-medium">
+                        <MousePointerClick className="h-3 w-3" />{ev.clicked} clicaram
+                      </span>
                     )}
                     <span>{new Date(campaign.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                   </div>
@@ -194,7 +226,8 @@ export default function ClientCampaignsPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

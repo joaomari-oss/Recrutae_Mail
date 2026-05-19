@@ -25,7 +25,10 @@
       "Bash(npx supabase *)",
       "Bash(node -e \"const fs=require\\('fs'\\);const b=fs.readFileSync\\('C:/Users/joaol/Documents/Recrutae/automaticEmail/Automatic_Email/public/recrutae.webp'\\).toString\\('base64'\\);console.log\\(b.length\\);process.stdout.write\\(b\\)\")",
       "Read(//tmp/**)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(New-Item -ItemType File -Path \"C:\\\\Users\\\\joaol\\\\Documents\\\\Recrutae\\\\automaticEmail\\\\Automatic_Email\\\\app\\\\api\\\\clients\\\\save-campaign\\\\route.ts\" -Force)",
+      "Bash(Out-Null)",
+      "Bash(Write-Output \"created\")"
     ]
   }
 }

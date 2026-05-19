@@ -252,7 +252,7 @@ export default function ClientsPage() {
       mode === 'csv'
         ? csvContacts
         : validManualContacts.map((c) => ({
-            id: `contact-${c.id}`,
+            id: crypto.randomUUID(),
             firstName: c.firstName,
             lastName: '',
             fullName: c.firstName,
