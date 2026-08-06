@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { useDropzone } from 'react-dropzone'
+import { useDropzone, type FileRejection } from 'react-dropzone'
 import { useClientStore } from '@/store/clientStore'
 import { ClientContact } from '@/lib/clientTypes'
 import {
@@ -19,146 +19,8 @@ import {
   ChevronUp,
   X,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, parseClientContactsFile } from '@/lib/utils'
 import { toast } from 'sonner'
-import Papa from 'papaparse'
-import * as XLSX from 'xlsx'
-
-/** Case-insensitive column lookup — finds first key that matches any of the given patterns */
-function col(row: Record<string, string>, ...patterns: string[]): string {
-  const keys = Object.keys(row)
-  for (const pat of patterns) {
-    const normalPat = pat.toLowerCase().trim()
-    const found = keys.find((k) => k.toLowerCase().trim() === normalPat)
-    if (found && row[found]) return row[found].toString().trim()
-  }
-  for (const pat of patterns) {
-    const normalPat = pat.toLowerCase().trim()
-    const found = keys.find((k) => k.toLowerCase().trim().includes(normalPat))
-    if (found && row[found]) return row[found].toString().trim()
-  }
-  return ''
-}
-
-/**
- * Parses a 2D array of strings (raw rows) into ClientContact[].
- * Automatically detects:
- *  - Header row present → uses col() to map by name (case-insensitive)
- *  - No header row      → positional mapping: finds email column by @, name before it, rest = company/title
- */
-function parseRawRows(allRows: string[][]): ClientContact[] {
-  if (!allRows.length) return []
-
-  // Find which column most often contains an email address
-  const maxCols = Math.max(...allRows.map((r) => r.length))
-  const emailScores = Array(maxCols).fill(0)
-  for (const row of allRows) {
-    for (let i = 0; i < row.length; i++) {
-      const v = String(row[i] ?? '').trim()
-      if (v.includes('@') && v.includes('.')) emailScores[i]++
-    }
-  }
-  const emailColIdx = emailScores.indexOf(Math.max(...emailScores))
-  if (emailScores[emailColIdx] === 0) return []
-
-  // Is first row a header? Its email-column cell won't look like an email
-  const hasHeader = !String(allRows[0][emailColIdx] ?? '').trim().includes('@')
-
-  const headers = hasHeader ? allRows[0].map((h) => String(h ?? '').trim()) : []
-  const dataRows = hasHeader ? allRows.slice(1) : allRows
-
-  return dataRows
-    .map((row, idx) => {
-      let email = '', fullName = '', firstName = '', lastName = '', company = '', position = ''
-
-      if (hasHeader) {
-        const obj: Record<string, string> = {}
-        headers.forEach((h, i) => { obj[h] = String(row[i] ?? '').trim() })
-        email     = col(obj, 'Email', 'E-mail', 'email', 'e_mail', 'Work Email', 'Corporate Email', 'Business Email')
-        firstName = col(obj, 'First Name', 'first_name', 'firstname', 'Nome', 'first', 'name')
-        lastName  = col(obj, 'Last Name',  'last_name',  'lastname',  'Sobrenome', 'last')
-        fullName  = `${firstName} ${lastName}`.trim()
-          || col(obj, 'Full Name', 'full_name', 'fullname', 'Nome Completo', 'Contact Name', 'Name')
-        company   = col(obj, 'Company', 'company', 'Empresa', 'Account Name', 'Organization', 'employer')
-        position  = col(obj, 'Title', 'title', 'Cargo', 'Job Title', 'Position', 'Role', 'ocupacao')
-      } else {
-        // Positional: email at emailColIdx
-        email = String(row[emailColIdx] ?? '').trim()
-        // Name: column immediately before email, or first non-email column
-        const nameIdx = emailColIdx > 0 ? emailColIdx - 1 : row.findIndex((_, i) => i !== emailColIdx)
-        fullName  = nameIdx >= 0 ? String(row[nameIdx] ?? '').trim() : ''
-        firstName = fullName.split(' ')[0] || ''
-        lastName  = fullName.split(' ').slice(1).join(' ')
-        // Remaining columns (not email, not name) → company, then position
-        const rest = row
-          .map((v, i) => ({ v: String(v ?? '').trim(), i }))
-          .filter(({ v, i }) => i !== emailColIdx && i !== nameIdx && v)
-        company  = rest[0]?.v || ''
-        position = rest[1]?.v || ''
-      }
-
-      return {
-        id: crypto.randomUUID(),
-        firstName,
-        lastName,
-        fullName: fullName || email.split('@')[0],
-        email,
-        company,
-        position,
-        status: 'pending' as const,
-        generatedSubject: '', generatedBody: '',
-        editedSubject: '', editedBody: '',
-        sendAttempts: 0,
-      }
-    })
-    .filter((c) => c.email && c.email.includes('@'))
-}
-
-function parseClientCSV(file: File): Promise<ClientContact[]> {
-  return new Promise((resolve, reject) => {
-    Papa.parse(file, {
-      header: false,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const rawRows = (results.data as unknown[][]).map((r) => (r as unknown[]).map((v) => String(v ?? '')))
-        if (!rawRows.length) { reject(new Error('CSV vazio ou sem dados.')); return }
-        const contacts = parseRawRows(rawRows)
-        if (!contacts.length) {
-          reject(new Error(`Nenhum e-mail válido encontrado. Primeira linha: ${rawRows[0]?.join(', ') || '(vazia)'}`))
-          return
-        }
-        resolve(contacts)
-      },
-      error: (err) => reject(new Error(`Erro ao parsear CSV: ${err.message}`)),
-    })
-  })
-}
-
-function parseClientExcel(file: File): Promise<ClientContact[]> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer)
-        const workbook = XLSX.read(data, { type: 'array' })
-        const sheetName = workbook.SheetNames[0]
-        if (!sheetName) { reject(new Error('Planilha vazia.')); return }
-        const rawRows: string[][] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' })
-        if (!rawRows.length) { reject(new Error('Nenhuma linha encontrada na planilha.')); return }
-        const contacts = parseRawRows(rawRows)
-        if (!contacts.length) {
-          reject(new Error(`Nenhum e-mail válido encontrado. Primeira linha: ${rawRows[0]?.join(', ') || '(vazia)'}`))
-          return
-        }
-        resolve(contacts)
-      } catch (err) {
-        reject(new Error(`Erro ao ler planilha: ${err instanceof Error ? err.message : 'desconhecido'}`))
-      }
-    }
-    reader.onerror = () => reject(new Error('Erro ao ler o arquivo.'))
-    reader.readAsArrayBuffer(file)
-  })
-}
 
 type ManualContact = {
   id: string
@@ -211,8 +73,7 @@ export default function ClientsPage() {
     setCsvContacts([])
     setCsvFileName(file.name)
     try {
-      const isExcel = /\.(xlsx|xls)$/i.test(file.name)
-      const contacts = isExcel ? await parseClientExcel(file) : await parseClientCSV(file)
+      const contacts = await parseClientContactsFile(file)
       setCsvContacts(contacts)
     } catch (err) {
       setCsvError(err instanceof Error ? err.message : 'Erro ao processar arquivo.')
@@ -222,13 +83,29 @@ export default function ClientsPage() {
     }
   }, [])
 
+  // Sem isso, um arquivo com extensão não aceita era descartado em silêncio.
+  const onDropRejected = useCallback((rejections: FileRejection[]) => {
+    const name = rejections[0]?.file?.name ?? 'arquivo'
+    setCsvError(`"${name}" não é um formato aceito. Envie um arquivo .csv, .xlsx, .xls ou .ods.`)
+    setCsvFileName(null)
+  }, [])
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected,
+    // O react-dropzone aceita o arquivo se o MIME OU a extensão baterem — por isso
+    // as extensões são repetidas: o Windows costuma reportar MIME vazio/genérico.
     accept: {
       'text/csv': ['.csv'],
+      'application/csv': ['.csv'],
+      'text/x-csv': ['.csv'],
+      'text/plain': ['.csv'],
       'application/vnd.ms-excel': ['.csv', '.xls'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'text/plain': ['.csv'],
+      'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
+      'application/vnd.ms-excel.sheet.binary.macroEnabled.12': ['.xlsb'],
+      'application/vnd.oasis.opendocument.spreadsheet': ['.ods'],
+      'application/octet-stream': ['.csv', '.xlsx', '.xlsm', '.xlsb', '.xls', '.ods'],
     },
     multiple: false,
     disabled: csvLoading,
@@ -355,7 +232,7 @@ export default function ClientsPage() {
                     <p className="text-brand-white font-semibold">Arraste seu arquivo de contatos</p>
                     <p className="text-brand-muted text-sm mt-1">ou <span className="text-brand-coral underline underline-offset-2">clique para selecionar</span></p>
                   </div>
-                  <p className="text-xs text-brand-muted/60">Formatos aceitos: .csv, .xlsx, .xls &nbsp;|&nbsp; Colunas: First Name, Email, Company, Title</p>
+                  <p className="text-xs text-brand-muted/60">Formatos: .csv, .xlsx, .xls, .ods &nbsp;|&nbsp; Colunas: Nome, E-mail, Empresa (opcional), Cargo</p>
                 </div>
               )}
             </div>

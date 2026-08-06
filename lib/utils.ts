@@ -2,7 +2,8 @@ import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import Papa from 'papaparse'
 import { Candidate } from './types'
-import { rowsToCandidates } from './contactParsing'
+import type { ClientContact } from './clientTypes'
+import { rowsToCandidates, rowsToClientContacts } from './contactParsing'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -56,12 +57,8 @@ function readRawRowsFromExcel(file: File): Promise<string[][]> {
   })
 }
 
-/**
- * Lê um arquivo de contatos (.csv, .xlsx, .xls, .ods) e devolve os candidatos.
- * Aceita tanto exportações do Apollo.io/Octopus CRM quanto planilhas simples
- * no formato Nome | E-mail | Empresa | Cargo.
- */
-export async function parseContactsFile(file: File): Promise<Candidate[]> {
+/** Lê as linhas cruas de um arquivo de contatos (.csv ou planilha). */
+async function readContactRows(file: File): Promise<string[][]> {
   const rawRows = isExcelFile(file)
     ? await readRawRowsFromExcel(file)
     : await readRawRowsFromCSV(file)
@@ -70,16 +67,34 @@ export async function parseContactsFile(file: File): Promise<Candidate[]> {
     throw new Error('Arquivo vazio — nenhuma linha encontrada.')
   }
 
+  return rawRows
+}
+
+function noEmailError(rawRows: string[][]): Error {
+  const firstRow = rawRows[0]?.filter(Boolean).join(', ') || '(linha vazia)'
+  return new Error(
+    `Nenhum e-mail válido encontrado. Verifique se existe uma coluna de e-mail. Primeira linha lida: ${firstRow}`
+  )
+}
+
+/**
+ * Lê um arquivo de contatos (.csv, .xlsx, .xls, .ods) e devolve os candidatos.
+ * Aceita tanto exportações do Apollo.io/Octopus CRM quanto planilhas simples
+ * no formato Nome | E-mail | Empresa | Cargo.
+ */
+export async function parseContactsFile(file: File): Promise<Candidate[]> {
+  const rawRows = await readContactRows(file)
   const candidates = rowsToCandidates(rawRows)
-
-  if (candidates.length === 0) {
-    const firstRow = rawRows[0]?.filter(Boolean).join(', ') || '(linha vazia)'
-    throw new Error(
-      `Nenhum e-mail válido encontrado. Verifique se existe uma coluna de e-mail. Primeira linha lida: ${firstRow}`
-    )
-  }
-
+  if (candidates.length === 0) throw noEmailError(rawRows)
   return candidates
+}
+
+/** Mesma leitura da aba de candidatos, devolvendo contatos do fluxo de clientes. */
+export async function parseClientContactsFile(file: File): Promise<ClientContact[]> {
+  const rawRows = await readContactRows(file)
+  const contacts = rowsToClientContacts(rawRows)
+  if (contacts.length === 0) throw noEmailError(rawRows)
+  return contacts
 }
 
 /**

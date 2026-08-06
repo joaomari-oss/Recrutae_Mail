@@ -4,7 +4,8 @@ import Groq from 'groq-sdk'
 import { GenerateClientEmailRequest } from '@/lib/clientTypes'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { supabase } from '@/lib/supabase'
-import { generateWithFallback, classifyAIError } from '@/lib/aiFallback'
+import { generateWithFallback, describeAIFailure } from '@/lib/aiFallback'
+import { renderTemplate, isFaithfulToTemplate } from '@/lib/templateRender'
 
 const db = supabaseAdmin ?? supabase
 
@@ -14,8 +15,8 @@ Sua única função é adaptar um e-mail template escrito pelo recrutador para c
 
 REGRAS ABSOLUTAS:
 1. PRESERVE rigorosamente a estrutura, mensagem, tom e intenção do template original
-2. PERSONALIZE substituindo {{PRIMEIRO_NOME}} pelo primeiro nome do contato, {{EMPRESA}} pela empresa, {{CARGO}} pelo cargo — onde esses marcadores aparecerem
-3. Se o template não usa marcadores mas menciona "a empresa", "sua empresa" ou nomes genéricos, substitua naturalmente pelo nome real da empresa do contato
+2. O template JA CHEGA com os dados do contato preenchidos (nome, empresa, cargo). NAO existem marcadores para substituir — se voce encontrar algo como [Nome], {{EMPRESA}} ou {Cargo}, foi engano: remova o marcador, nunca o copie para o e-mail final
+3. NUNCA invente nome, empresa ou cargo que nao esteja no texto recebido. Se o template nao menciona a empresa, o e-mail final tambem nao deve mencionar
 4. Se o template começa com "Olá," sem nome, adicione o primeiro nome: "Olá, {primeiro_nome}!"
 5. Faça variações SUTIS de fraseado (10-15% do texto): troque conectores, reordene adjetivos, varie construção de frases — sem alterar o significado
 6. NUNCA adicione conteúdo, seções ou informações que não estão no template
@@ -108,10 +109,34 @@ export async function POST(request: NextRequest) {
     }
 
     const seed = variationSeed ?? Math.floor(Math.random() * 1000)
+
+    // Preenche [Nome], [Empresa], [Cargo] ANTES de chamar a IA. Assim o modelo
+    // recebe "Olá, Alessandro, tudo bem?" ja pronto e nunca ve um marcador —
+    // nao ha como ele deixar passar, ignorar ou reescrever o campo.
+    const templateContact = {
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      fullName: contact.fullName,
+      email: contact.email,
+      company: contact.company,
+      position: contact.position,
+      segment,
+    }
+    const filledBody = renderTemplate(emailTemplate, templateContact)
+    const filledSubject = renderTemplate(subjectTemplate ?? '', templateContact).trim()
+
     const systemPrompt = buildSystemPrompt()
-    const userPrompt = buildUserPrompt({ contact, campaignId, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, variationSeed: seed })
+    const userPrompt = buildUserPrompt({
+      contact, campaignId, recruiterName, recruiterEmail, recruiterRole, segment,
+      emailTemplate: filledBody,
+      variationSeed: seed,
+    })
 
     const provider = aiProvider ?? 'openai'
+
+    /** Assunto final: template do recrutador (ja preenchido) tem prioridade. */
+    const resolveSubject = (aiSubject?: string) =>
+      filledSubject || (aiSubject ?? '').trim() || `${recruiterName} — Recrutaê`
 
     const callProvider = async (p: 'openai' | 'groq'): Promise<string> => {
       if (p === 'groq') {
@@ -152,27 +177,50 @@ export async function POST(request: NextRequest) {
       }
 
       const parsed = JSON.parse(text)
-      const subject = subjectTemplate?.trim()
-        ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
-        : parsed.subject
-      const finalBody = stripTrailingSignature(parsed.body)
-      await persistGenerated(subject, finalBody)
-      return NextResponse.json({ subject, body: finalBody, usedProvider, didFallback })
-    } catch (err: unknown) {
-      // So chega aqui se OpenAI E Groq falharem.
-      const kind = classifyAIError(err)
-      if (kind === 'out_of_credits' || kind === 'rate_limited') {
-        return NextResponse.json(
-          {
-            error:
-              'Todos os provedores de IA estao indisponiveis (sem creditos ou limite atingido). ' +
-              'Verifique o saldo da OpenAI e a chave do Groq.',
-            quotaExceeded: true,
-          },
-          { status: 429 }
-        )
+      if (!parsed?.body || typeof parsed.body !== 'string') {
+        throw new Error('Resposta da IA sem body utilizavel.')
       }
-      throw err
+
+      const subject = resolveSubject(parsed.subject)
+      const aiBody = stripTrailingSignature(parsed.body)
+
+      // A IA pode variar o fraseado, mas nao truncar, repetir ou inventar secoes.
+      // Se ela corromper o texto, vale o template do recrutador — e o que ele pediu.
+      const fidelity = isFaithfulToTemplate(aiBody, filledBody)
+      if (!fidelity.ok) {
+        console.warn(`[clients/generate] IA fugiu do modelo (${fidelity.reason}) — usando template preenchido`)
+        const safeBody = stripTrailingSignature(filledBody)
+        await persistGenerated(subject, safeBody)
+        return NextResponse.json({
+          subject,
+          body: safeBody,
+          usedProvider: 'template',
+          didFallback: true,
+          templateEnforced: true,
+          notice: `O texto gerado fugiu do seu modelo (${fidelity.reason}); enviamos o seu modelo preenchido.`,
+        })
+      }
+
+      await persistGenerated(subject, aiBody)
+      return NextResponse.json({ subject, body: aiBody, usedProvider, didFallback })
+    } catch (err: unknown) {
+      // Nivel 3: os dois provedores falharam (sem credito, limite diario,
+      // JSON invalido ou timeout). O template ja esta preenchido, entao o
+      // e-mail sai assim mesmo — a campanha nunca trava por causa da IA.
+      console.warn('[clients/generate] IA indisponivel, usando template preenchido:', describeAIFailure(err))
+
+      const subject = resolveSubject()
+      const finalBody = stripTrailingSignature(filledBody)
+      await persistGenerated(subject, finalBody)
+
+      return NextResponse.json({
+        subject,
+        body: finalBody,
+        usedProvider: 'template',
+        didFallback: true,
+        aiUnavailable: true,
+        notice: describeAIFailure(err),
+      })
     }
   } catch (err) {
     console.error('[clients/generate] Error:', err)

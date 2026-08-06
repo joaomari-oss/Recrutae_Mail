@@ -48,32 +48,84 @@ export function classifyAIError(err: unknown): AIFailureKind {
   const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
   const msg = raw.toLowerCase()
 
-  if (msg.includes('nao configurada') || msg.includes('não configurada') || msg.includes('api key')) {
+  // Chave ausente OU invalida: nos dois casos o provedor esta inutilizavel,
+  // mas o outro pode funcionar — entao vale tentar a alternativa.
+  if (
+    msg.includes('nao configurada') ||
+    msg.includes('não configurada') ||
+    msg.includes('api key') ||
+    msg.includes('invalid_api_key') ||
+    msg.includes('unauthorized')
+  ) {
     return 'missing_key'
   }
+  // Limite temporario vem PRIMEIRO: a mensagem de rate limit do Groq inclui um
+  // link de billing/upgrade, e se checassemos "billing" antes, um limite diario
+  // que zera em minutos seria tratado como conta sem saldo.
+  if (
+    msg.includes('rate limit') ||
+    msg.includes('rate_limit') ||
+    msg.includes('try again in') ||
+    msg.includes('tokens per day') ||
+    msg.includes('requests per') ||
+    msg.includes('too many requests') ||
+    msg.includes('resource_exhausted')
+  ) {
+    return 'rate_limited'
+  }
+  // Sem saldo: so os codigos explicitos — repetir no mesmo provedor nao adianta.
   if (
     msg.includes('insufficient_quota') ||
     msg.includes('credit_balance_exhausted') ||
     msg.includes('no credits remaining') ||
     msg.includes('exceeded your current quota') ||
-    msg.includes('billing') ||
+    msg.includes('billing_hard_limit_reached') ||
     msg.includes('sem creditos') ||
     msg.includes('sem créditos')
   ) {
     return 'out_of_credits'
   }
-  if (
-    status === 429 ||
-    msg.includes('rate_limit') ||
-    msg.includes('rate limit') ||
-    msg.includes('429') ||
-    msg.includes('too many requests') ||
-    msg.includes('resource_exhausted') ||
-    msg.includes('quota')
-  ) {
+  if (status === 429 || msg.includes('429') || msg.includes('quota')) {
     return 'rate_limited'
   }
   return 'other'
+}
+
+/**
+ * Extrai "tente novamente em X" da mensagem do provedor, quando existir.
+ * O Groq informa isso no rate limit diario (ex.: "Please try again in 17m40.992s").
+ */
+export function extractRetryHint(err: unknown): string | null {
+  const raw = err instanceof Error ? err.message : String(err ?? '')
+  const match = raw.match(/try again in ([\dhms.]+)/i)
+  if (!match) return null
+  const spec = match[1]
+  const h = spec.match(/(\d+)h/)
+  const m = spec.match(/(\d+)m/)
+  const parts: string[] = []
+  if (h) parts.push(`${h[1]}h`)
+  if (m) parts.push(`${m[1]}min`)
+  if (!parts.length) return 'menos de 1 minuto'
+  return parts.join(' ')
+}
+
+/** Mensagem em pt-BR explicando por que a geracao falhou e o que fazer. */
+export function describeAIFailure(err: unknown): string {
+  const kind = classifyAIError(err)
+  const retry = extractRetryHint(err)
+
+  if (kind === 'rate_limited') {
+    return retry
+      ? `Limite de uso da IA atingido nos dois provedores. O limite libera em cerca de ${retry} — tente de novo depois disso, ou adicione créditos na OpenAI para continuar agora.`
+      : 'Limite de uso da IA atingido nos dois provedores. Aguarde alguns minutos e tente de novo, ou adicione créditos na OpenAI.'
+  }
+  if (kind === 'out_of_credits') {
+    return 'Os provedores de IA estão sem saldo. Adicione créditos na OpenAI (ou configure uma chave Groq com limite maior) para voltar a gerar e-mails.'
+  }
+  if (kind === 'missing_key') {
+    return 'Nenhum provedor de IA disponível — chave ausente ou inválida. Verifique OPENAI_API_KEY e GROQ_API_KEY.'
+  }
+  return 'Não foi possível gerar o e-mail. Tente novamente em instantes.'
 }
 
 export function otherProvider(provider: AIProvider): AIProvider {
@@ -135,7 +187,8 @@ export async function generateWithFallback<T>(
       // ao trocar de provedor — propaga direto.
       if (kind === 'other') throw err
 
-      console.warn(`[ai-fallback] ${provider} falhou (${kind}) — tentando alternativa`)
+      const detail = err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300)
+      console.warn(`[ai-fallback] ${provider} falhou (${kind}) — tentando alternativa | ${detail}`)
     }
   }
 

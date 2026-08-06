@@ -364,7 +364,7 @@ export default function ClientsComposePage() {
               Template do e-mail <span className="text-brand-coral">*</span>
             </label>
             <p className="text-xs text-brand-muted/60 leading-relaxed">
-              Escreva o e-mail completo que você quer enviar. A IA vai personalizar o nome, empresa e cargo de cada contato, e fazer variações sutis para evitar spam. Use <code className="bg-white/5 px-1 rounded">{'{{PRIMEIRO_NOME}}'}</code>, <code className="bg-white/5 px-1 rounded">{'{{EMPRESA}}'}</code> e <code className="bg-white/5 px-1 rounded">{'{{CARGO}}'}</code> como marcadores opcionais.
+              Escreva o e-mail completo que você quer enviar. Os marcadores são preenchidos com os dados de cada contato antes do envio, e a IA faz variações sutis de fraseado para evitar spam. Use <code className="bg-white/5 px-1 rounded">[Nome]</code>, <code className="bg-white/5 px-1 rounded">[Empresa]</code> e <code className="bg-white/5 px-1 rounded">[Cargo]</code> — as formas <code className="bg-white/5 px-1 rounded">{'{{PRIMEIRO_NOME}}'}</code> e <code className="bg-white/5 px-1 rounded">{'{{EMPRESA}}'}</code> também funcionam. Se um contato não tiver empresa, o marcador some sozinho sem deixar frase quebrada.
             </p>
             <textarea
               rows={12}

@@ -3,7 +3,7 @@ import Groq from 'groq-sdk'
 import { GenerateEmailRequest } from '@/lib/types'
 import { validateApiKey, unauthorizedResponse } from '@/lib/api-auth'
 import { checkRateLimit } from '@/lib/rate-limiter'
-import { generateWithFallback } from '@/lib/aiFallback'
+import { generateWithFallback, describeAIFailure } from '@/lib/aiFallback'
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 const OPENAI_MODEL = 'gpt-4o-mini'
@@ -207,6 +207,58 @@ function parseAIResponse(content: string, firstName?: string): { subject: string
   }
 }
 
+/**
+ * Monta o e-mail sem IA, seguindo o TEMPLATE BASE documentado no prompt do sistema.
+ * Usado quando nenhum provedor responde — a campanha nao pode travar por isso.
+ */
+function renderBaseTemplate(params: {
+  firstName: string
+  role: string
+  hiringCompany: string
+  jobDescription: string
+  link?: string
+  recruiterCompany: string
+}): string {
+  const { firstName, role, hiringCompany, jobDescription, link, recruiterCompany } = params
+
+  // Resumo curto da vaga: primeiras frases da descricao, sem estourar o tamanho.
+  const summary = jobDescription
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .slice(0, 2)
+    .join(' ')
+    .slice(0, 320)
+
+  const parts = [
+    `Olá, ${firstName}!`,
+    '',
+    `Estou te escrevendo pois identifiquei uma oportunidade que pode ser do seu interesse: ${role} na ${hiringCompany}.`,
+    '',
+    `A posição envolve ${summary || 'desafios alinhados ao seu perfil'}`,
+  ]
+
+  if (link) {
+    parts.push(
+      '',
+      'Para mais informações:',
+      link,
+      '',
+      'Se você conhece profissionais interessados nessa área, sinta-se livre para compartilhar. Indicações são sempre bem-vindas!'
+    )
+  }
+
+  parts.push(
+    '',
+    'Se fizer sentido para você, fico à disposição para conversarmos melhor.',
+    '',
+    'Abraços,'
+  )
+
+  void recruiterCompany // a assinatura visual e montada pelo template de e-mail
+  return parts.join('\n')
+}
+
 function isQuotaError(err: unknown): boolean {
   if (err instanceof Error) {
     const msg = err.message.toLowerCase()
@@ -360,20 +412,24 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error(`[/api/generate] ${provider} error:`, err)
 
-    // So chega aqui se TODOS os provedores falharem.
-    if (isQuotaError(err)) {
-      return NextResponse.json(
-        {
-          error:
-            'Todos os provedores de IA estao indisponiveis no momento (sem creditos ou limite atingido). ' +
-            'Verifique o saldo da OpenAI e a chave do Groq.',
-          quotaExceeded: true,
-        },
-        { status: 429 }
-      )
-    }
-
-    const message = err instanceof Error ? err.message : 'Erro desconhecido ao chamar a IA.'
-    return NextResponse.json({ error: message }, { status: 500 })
+    // Nivel 3: nenhum provedor respondeu. Vale para QUALQUER falha — sem credito,
+    // limite diario, chave invalida, JSON quebrado ou timeout. Monta pelo template
+    // base em vez de devolver erro, para a campanha nunca travar por causa da IA.
+    console.warn('[/api/generate] IA indisponivel, usando template base:', describeAIFailure(err))
+    return NextResponse.json({
+      subject: forcedSubject,
+      body: renderBaseTemplate({
+        firstName: candidate.firstName,
+        role,
+        hiringCompany,
+        jobDescription,
+        link,
+        recruiterCompany: recruiterCompany || '',
+      }),
+      usedProvider: 'template',
+      didFallback: true,
+      aiUnavailable: true,
+      notice: describeAIFailure(err),
+    })
   }
 }

@@ -1,4 +1,5 @@
 import type { Candidate } from './types'
+import type { ClientContact } from './clientTypes'
 
 /**
  * Núcleo puro de parsing de contatos — recebe linhas cruas (string[][]) vindas de
@@ -84,8 +85,20 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
   return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') }
 }
 
+/** Contato já normalizado, antes de virar Candidate ou ClientContact. */
+export type ParsedContact = {
+  firstName: string
+  lastName: string
+  fullName: string
+  email: string
+  /** Cargo — vira `title` em Candidate e `position` em ClientContact. */
+  title: string
+  company: string
+  linkedinUrl: string
+}
+
 /**
- * Converte linhas cruas em Candidate[].
+ * Converte linhas cruas em contatos normalizados.
  *
  * Detecta automaticamente:
  *  - Coluna de e-mail (a que mais contém "@" — funciona mesmo com cabeçalho inesperado)
@@ -95,7 +108,7 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
  * Regras: e-mail pessoal tem prioridade sobre corporativo, placeholders ("-", "N/A")
  * viram vazio, linhas sem e-mail válido são descartadas e e-mails repetidos são deduplicados.
  */
-export function rowsToCandidates(allRows: unknown[][]): Candidate[] {
+export function parseContactRows(allRows: unknown[][]): ParsedContact[] {
   const rows = (allRows || [])
     .map((r) => (Array.isArray(r) ? r.map(cell) : []))
     .filter((r) => r.some((v) => v !== ''))
@@ -118,7 +131,7 @@ export function rowsToCandidates(allRows: unknown[][]): Candidate[] {
   const headers = hasHeader ? rows[0] : []
   const dataRows = hasHeader ? rows.slice(1) : rows
 
-  const candidates: Candidate[] = []
+  const contacts: ParsedContact[] = []
 
   for (const row of dataRows) {
     let email = ''
@@ -169,30 +182,54 @@ export function rowsToCandidates(allRows: unknown[][]): Candidate[] {
       lastName = lastName || split.lastName
     }
 
-    candidates.push({
-      id: `candidate-${crypto.randomUUID()}`,
-      firstName,
-      lastName,
-      fullName,
-      title,
-      company,
-      email,
-      linkedinUrl,
-      status: 'pending',
-      generatedSubject: '',
-      generatedBody: '',
-      editedSubject: '',
-      editedBody: '',
-      sendAttempts: 0,
-    })
+    contacts.push({ firstName, lastName, fullName, email, title, company, linkedinUrl })
   }
 
   // Deduplica por e-mail (case-insensitive), mantendo a primeira ocorrência.
   const seen = new Set<string>()
-  return candidates.filter((c) => {
+  return contacts.filter((c) => {
     const key = c.email.toLowerCase()
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
+}
+
+/** Linhas cruas -> candidatos (fluxo de recrutamento, aba Candidatos). */
+export function rowsToCandidates(allRows: unknown[][]): Candidate[] {
+  return parseContactRows(allRows).map((c) => ({
+    id: `candidate-${crypto.randomUUID()}`,
+    firstName: c.firstName,
+    lastName: c.lastName,
+    fullName: c.fullName,
+    title: c.title,
+    company: c.company,
+    email: c.email,
+    linkedinUrl: c.linkedinUrl,
+    status: 'pending' as const,
+    generatedSubject: '',
+    generatedBody: '',
+    editedSubject: '',
+    editedBody: '',
+    sendAttempts: 0,
+  }))
+}
+
+/** Linhas cruas -> contatos de cliente (fluxo B2B, aba Clientes). */
+export function rowsToClientContacts(allRows: unknown[][]): ClientContact[] {
+  return parseContactRows(allRows).map((c) => ({
+    id: crypto.randomUUID(),
+    firstName: c.firstName,
+    lastName: c.lastName,
+    fullName: c.fullName,
+    email: c.email,
+    company: c.company,
+    position: c.title,
+    status: 'pending' as const,
+    generatedSubject: '',
+    generatedBody: '',
+    editedSubject: '',
+    editedBody: '',
+    sendAttempts: 0,
+  }))
 }
