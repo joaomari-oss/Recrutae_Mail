@@ -89,7 +89,8 @@ export type GenerateClientEmailRequest = {
   recruiterRole?: string
   /** LinkedIn do recrutador */
   recruiterLinkedin?: string
-  segment: string
+  /** Opcional — sem segmento, o e-mail nao menciona setor algum. */
+  segment?: string
   emailTemplate: string
   aiProvider?: 'openai' | 'groq'
   variationSeed?: number

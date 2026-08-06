@@ -111,7 +111,7 @@ export default function ClientsSendingPage() {
         {/* Header */}
         <div className="text-center space-y-2 animate-fade-up">
           <h1 className="text-3xl font-display font-bold text-brand-white">{campaign.name}</h1>
-          <p className="text-brand-muted text-sm">{config.segment}</p>
+          {config.segment && <p className="text-brand-muted text-sm">{config.segment}</p>}
         </div>
 
         {/* Status card */}

@@ -16,7 +16,7 @@ Sua única função é adaptar um e-mail template escrito pelo recrutador para c
 REGRAS ABSOLUTAS:
 1. PRESERVE rigorosamente a estrutura, mensagem, tom e intenção do template original
 2. O template JA CHEGA com os dados do contato preenchidos (nome, empresa, cargo). NAO existem marcadores para substituir — se voce encontrar algo como [Nome], {{EMPRESA}} ou {Cargo}, foi engano: remova o marcador, nunca o copie para o e-mail final
-3. NUNCA invente nome, empresa ou cargo que nao esteja no texto recebido. Se o template nao menciona a empresa, o e-mail final tambem nao deve mencionar
+3. NUNCA invente nome, empresa, cargo ou segmento/setor que nao esteja no texto recebido. Se o template nao menciona a empresa ou o segmento, o e-mail final tambem nao deve mencionar — nem com frase generica ("sua empresa", "seu setor", "seu segmento")
 4. Se o template começa com "Olá," sem nome, adicione o primeiro nome: "Olá, {primeiro_nome}!"
 5. Faça variações SUTIS de fraseado (10-15% do texto): troque conectores, reordene adjetivos, varie construção de frases — sem alterar o significado
 6. NUNCA adicione conteúdo, seções ou informações que não estão no template
@@ -57,6 +57,29 @@ function buildUserPrompt(req: GenerateClientEmailRequest): string {
   const { contact, segment, emailTemplate, variationSeed } = req
   const firstName = contact.firstName || contact.fullName.split(' ')[0] || 'pessoal'
 
+  // Campo ausente NAO entra no prompt. Mandar "Empresa: nao informada" fazia a IA
+  // escrever justamente isso no e-mail; sem a linha, ela nao tem o que mencionar.
+  const knownFields = [
+    `- Nome completo: ${contact.fullName}`,
+    `- Primeiro nome: ${firstName}`,
+    contact.company ? `- Empresa: ${contact.company}` : null,
+    contact.position ? `- Cargo: ${contact.position}` : null,
+    segment?.trim() ? `- Segmento: ${segment.trim()}` : null,
+  ].filter(Boolean).join('\n')
+
+  const missing = [
+    !contact.company ? 'a empresa do contato' : null,
+    !contact.position ? 'o cargo do contato' : null,
+    !segment?.trim() ? 'o segmento ou setor de atuação' : null,
+  ].filter(Boolean)
+
+  const omissionRule = missing.length
+    ? `\nDADOS QUE VOCE NAO TEM: ${missing.join(', ')}.
+REGRA ABSOLUTA: nao mencione esses dados, nao invente valor para eles e nao escreva
+frases genericas no lugar (nada de "sua empresa", "seu setor", "nao informado",
+"do seu segmento"). Simplesmente escreva o e-mail sem tocar nesses assuntos.\n`
+    : ''
+
   const variationHints = [
     'Varie especialmente a primeira frase após a saudação.',
     'Varie especialmente os conectores entre parágrafos.',
@@ -72,12 +95,8 @@ ${emailTemplate || '(template não fornecido)'}
 ---
 
 CONTATO A PERSONALIZAR:
-- Nome completo: ${contact.fullName}
-- Primeiro nome: ${firstName}
-- Empresa: ${contact.company || 'não informada'}
-- Cargo: ${contact.position || 'não informado'}
-- Segmento: ${segment}
-
+${knownFields}
+${omissionRule}
 REGRA CRÍTICA DE ASSINATURA: O body deve terminar com a saudação de fechamento do template (ex: "Abraços," ou "Atenciosamente,") e NADA MAIS depois disso.
 NÃO inclua nome do recrutador, cargo ou qualquer texto após o fechamento — a assinatura visual é gerada automaticamente pelo sistema.
 
@@ -89,7 +108,8 @@ export async function POST(request: NextRequest) {
     const body: GenerateClientEmailRequest & { subjectTemplate?: string } = await request.json()
     const { contact, campaignId, recruiterName, recruiterEmail, recruiterRole, segment, emailTemplate, subjectTemplate, aiProvider, variationSeed } = body
 
-    if (!contact || !recruiterName || !segment || !emailTemplate) {
+    // segment e opcional: campanhas sem segmento definido nao devem mencionar setor.
+    if (!contact || !recruiterName || !emailTemplate) {
       return NextResponse.json({ error: 'Campos obrigatórios ausentes.' }, { status: 400 })
     }
 

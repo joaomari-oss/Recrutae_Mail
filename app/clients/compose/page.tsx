@@ -52,7 +52,7 @@ export default function ClientsComposePage() {
       if (!replyTo.trim()) errs.replyTo = 'E-mail para respostas é obrigatório.'
       else if (!replyToValid) errs.replyTo = 'Formato de e-mail inválido.'
     }
-    if (!selectedSegment) errs.segment = 'Selecione um segmento.'
+    // Segmento e opcional — sem ele, o e-mail simplesmente nao fala de setor.
     if (!emailTemplate.trim()) errs.emailTemplate = 'Escreva o template do e-mail.'
     return errs
   }
@@ -285,8 +285,11 @@ export default function ClientsComposePage() {
           {/* Segment */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-brand-muted">
-              Segmento das empresas <span className="text-brand-coral">*</span>
+              Segmento das empresas <span className="text-brand-muted/50 font-normal">(opcional)</span>
             </label>
+            <p className="text-xs text-brand-muted/60 leading-relaxed">
+              Deixe em branco para que o e-mail não mencione setor nenhum.
+            </p>
             <div className="relative">
               <button
                 type="button"
@@ -302,7 +305,7 @@ export default function ClientsComposePage() {
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <Building2 className="h-4 w-4 text-brand-muted/60 flex-shrink-0" />
-                  <span className="truncate">{selectedSegment || 'Selecione o segmento…'}</span>
+                  <span className="truncate">{selectedSegment || 'Sem segmento'}</span>
                 </div>
                 {segmentOpen ? <ChevronUp className="h-4 w-4 text-brand-muted/60 flex-shrink-0" /> : <ChevronDown className="h-4 w-4 text-brand-muted/60 flex-shrink-0" />}
               </button>
@@ -324,6 +327,25 @@ export default function ClientsComposePage() {
                     </div>
                   </div>
                   <div className="overflow-y-auto max-h-56 p-1.5">
+                    {/* Permite voltar atras: sem segmento, o e-mail nao fala de setor. */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSegment('')
+                        setSegmentOpen(false)
+                        setSegmentSearch('')
+                        setErrors((p) => ({ ...p, segment: '' }))
+                      }}
+                      className={cn(
+                        'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors mb-0.5',
+                        !selectedSegment
+                          ? 'bg-brand-coral/15 text-brand-coral font-medium'
+                          : 'text-brand-muted hover:text-brand-white hover:bg-white/5'
+                      )}
+                    >
+                      Sem segmento
+                      {!selectedSegment && <CheckCircle2 className="inline ml-2 h-3.5 w-3.5" />}
+                    </button>
                     {filteredSegments.length === 0 ? (
                       <p className="text-center text-xs text-brand-muted py-4">Nenhum segmento encontrado.</p>
                     ) : (

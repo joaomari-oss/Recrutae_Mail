@@ -180,7 +180,9 @@ export default function ClientCampaignsPage() {
                       {statusLabel[campaign.status] ?? campaign.status}
                     </span>
                   </div>
-                  <p className="text-xs text-brand-muted mt-0.5 truncate">{campaign.segment}</p>
+                  {campaign.segment && (
+                    <p className="text-xs text-brand-muted mt-0.5 truncate">{campaign.segment}</p>
+                  )}
                   {campaign.recruiter_name && (
                     <p className="text-xs text-brand-muted/60 mt-0.5 truncate">{campaign.recruiter_name} · {campaign.recruiter_email}</p>
                   )}

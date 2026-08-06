@@ -90,7 +90,9 @@ export default function ClientsSentPage() {
         {/* Header */}
         <div className="space-y-1 animate-fade-up">
           <h1 className="text-3xl font-display font-bold text-brand-white">{campaign.name}</h1>
-          <p className="text-sm text-brand-muted">{config.segment} · {config.recruiterEmail}</p>
+          <p className="text-sm text-brand-muted">
+            {[config.segment, config.recruiterEmail].filter(Boolean).join(' · ')}
+          </p>
         </div>
 
         {/* Stats */}
