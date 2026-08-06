@@ -4,6 +4,7 @@ import Groq from 'groq-sdk'
 import { GenerateClientEmailRequest } from '@/lib/clientTypes'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { supabase } from '@/lib/supabase'
+import { generateWithFallback, classifyAIError } from '@/lib/aiFallback'
 
 const db = supabaseAdmin ?? supabase
 
@@ -112,31 +113,23 @@ export async function POST(request: NextRequest) {
 
     const provider = aiProvider ?? 'openai'
 
-    if (provider === 'groq') {
-      const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.75,
-        max_tokens: 900,
-        response_format: { type: 'json_object' },
-      })
-      const text = completion.choices[0]?.message?.content ?? ''
-      const parsed = JSON.parse(text)
-      const subject = subjectTemplate?.trim()
-        ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
-        : parsed.subject
-      const finalBody = stripTrailingSignature(parsed.body)
-      await persistGenerated(subject, finalBody)
-      return NextResponse.json({ subject, body: finalBody })
-    }
+    const callProvider = async (p: 'openai' | 'groq'): Promise<string> => {
+      if (p === 'groq') {
+        const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+        const completion = await groq.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.75,
+          max_tokens: 900,
+          response_format: { type: 'json_object' },
+        })
+        return completion.choices[0]?.message?.content ?? ''
+      }
 
-    // OpenAI (default)
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-    try {
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
@@ -147,18 +140,37 @@ export async function POST(request: NextRequest) {
         max_tokens: 900,
         response_format: { type: 'json_object' },
       })
-      const text = completion.choices[0]?.message?.content ?? ''
+      return completion.choices[0]?.message?.content ?? ''
+    }
+
+    try {
+      // Fallback automatico entre OpenAI e Groq quando um deles fica sem creditos.
+      const { result: text, usedProvider, didFallback } = await generateWithFallback(provider, callProvider)
+
+      if (didFallback) {
+        console.info(`[clients/generate] fallback ${provider} -> ${usedProvider}`)
+      }
+
       const parsed = JSON.parse(text)
       const subject = subjectTemplate?.trim()
         ? subjectTemplate.trim().replace(/\{\{EMPRESA\}\}/gi, contact.company || '').replace(/\{\{PRIMEIRO_NOME\}\}/gi, contact.firstName || '')
         : parsed.subject
       const finalBody = stripTrailingSignature(parsed.body)
       await persistGenerated(subject, finalBody)
-      return NextResponse.json({ subject, body: finalBody })
+      return NextResponse.json({ subject, body: finalBody, usedProvider, didFallback })
     } catch (err: unknown) {
-      const status = (err as { status?: number }).status
-      if (status === 429) {
-        return NextResponse.json({ error: 'Quota OpenAI atingida.', quotaExceeded: true }, { status: 429 })
+      // So chega aqui se OpenAI E Groq falharem.
+      const kind = classifyAIError(err)
+      if (kind === 'out_of_credits' || kind === 'rate_limited') {
+        return NextResponse.json(
+          {
+            error:
+              'Todos os provedores de IA estao indisponiveis (sem creditos ou limite atingido). ' +
+              'Verifique o saldo da OpenAI e a chave do Groq.',
+            quotaExceeded: true,
+          },
+          { status: 429 }
+        )
       }
       throw err
     }

@@ -3,6 +3,7 @@ import Groq from 'groq-sdk'
 import { GenerateEmailRequest } from '@/lib/types'
 import { validateApiKey, unauthorizedResponse } from '@/lib/api-auth'
 import { checkRateLimit } from '@/lib/rate-limiter'
+import { generateWithFallback } from '@/lib/aiFallback'
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 const OPENAI_MODEL = 'gpt-4o-mini'
@@ -278,10 +279,11 @@ async function generateWithOpenAI(
 
   if (!res.ok) {
     const errBody = await res.text()
-    if (res.status === 429) {
-      throw new Error('Rate limit exceeded (429)')
-    }
-    throw new Error(`OpenAI HTTP ${res.status} — ${errBody.slice(0, 200)}`)
+    // O corpo precisa ir junto: e' ele que diferencia "sem creditos"
+    // (insufficient_quota) de um rate limit temporario.
+    const err = new Error(`OpenAI HTTP ${res.status} — ${errBody.slice(0, 300)}`)
+    ;(err as Error & { status?: number }).status = res.status
+    throw err
   }
 
   const data = await res.json()
@@ -337,19 +339,36 @@ export async function POST(req: NextRequest) {
       : `Apresentação Recrutaê — ${role}`)
 
   try {
-    const result = provider === 'groq'
-      ? await generateWithGroq(systemPrompt, userPrompt, candidate.firstName)
-      : await generateWithOpenAI(systemPrompt, userPrompt, candidate.firstName)
+    // Fallback automatico: se a OpenAI estiver sem creditos ou limitada,
+    // o Groq assume sozinho — o recrutador nao precisa trocar na mao.
+    const { result, usedProvider, didFallback } = await generateWithFallback(provider, (p) =>
+      p === 'groq'
+        ? generateWithGroq(systemPrompt, userPrompt, candidate.firstName)
+        : generateWithOpenAI(systemPrompt, userPrompt, candidate.firstName)
+    )
 
-    return NextResponse.json({ subject: forcedSubject, body: result.body })
+    if (didFallback) {
+      console.info(`[/api/generate] fallback ${provider} -> ${usedProvider}`)
+    }
+
+    return NextResponse.json({
+      subject: forcedSubject,
+      body: result.body,
+      usedProvider,
+      didFallback,
+    })
   } catch (err) {
     console.error(`[/api/generate] ${provider} error:`, err)
 
-    // Check if it's a quota/rate limit error
+    // So chega aqui se TODOS os provedores falharem.
     if (isQuotaError(err)) {
-      const message = err instanceof Error ? err.message : 'Limite de tokens excedido.'
       return NextResponse.json(
-        { error: message, quotaExceeded: true },
+        {
+          error:
+            'Todos os provedores de IA estao indisponiveis no momento (sem creditos ou limite atingido). ' +
+            'Verifique o saldo da OpenAI e a chave do Groq.',
+          quotaExceeded: true,
+        },
         { status: 429 }
       )
     }

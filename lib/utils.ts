@@ -2,117 +2,92 @@ import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import Papa from 'papaparse'
 import { Candidate } from './types'
+import { rowsToCandidates } from './contactParsing'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function parseCSVFile(file: File): Promise<Candidate[]> {
+/** Extensões de planilha aceitas no upload de candidatos. */
+const EXCEL_EXTENSIONS = /\.(xlsx|xlsm|xlsb|xls|ods)$/i
+
+export function isExcelFile(file: File): boolean {
+  return EXCEL_EXTENSIONS.test(file.name)
+}
+
+function readRawRowsFromCSV(file: File): Promise<string[][]> {
   return new Promise((resolve, reject) => {
     Papa.parse(file, {
-      header: true,
+      header: false,
       skipEmptyLines: true,
       complete: (results) => {
-        const data = results.data as Record<string, string>[]
-
-        if (!data || data.length === 0) {
-          reject(new Error('Nenhum dado encontrado no CSV.'))
-          return
-        }
-
-        const firstRow = data[0]
-        const keys = Object.keys(firstRow).map((k) => k.toLowerCase().trim())
-        const hasEmail = keys.some(
-          (k) => k === 'email' || k === 'e-mail' || k === 'email address'
-        )
-
-        if (!hasEmail) {
-          reject(
-            new Error(
-              'CSV inválido: coluna "Email" não encontrada. Verifique se o arquivo foi exportado corretamente do Apollo.io.'
-            )
-          )
-          return
-        }
-
-        const getField = (row: Record<string, string>, ...variants: string[]) => {
-          for (const variant of variants) {
-            const key = Object.keys(row).find(
-              (k) => k.toLowerCase().trim() === variant.toLowerCase()
-            )
-            if (key && row[key]) return row[key].trim()
-          }
-          return ''
-        }
-
-        const candidates: Candidate[] = data
-          .filter((row) => {
-            const personalEmail = getField(row, 'personal email', 'personal_email', 'personal e-mail', 'email 2', 'secondary email')
-            const primaryEmail = getField(row, 'email', 'e-mail', 'email address')
-            const email = (personalEmail && personalEmail.includes('@')) ? personalEmail : primaryEmail
-            return email && email.includes('@')
-          })
-          .map((row, index) => {
-            const firstName = getField(row, 'first name', 'firstname', 'first_name')
-            const lastName = getField(row, 'last name', 'lastname', 'last_name')
-            const personalEmail = getField(row, 'personal email', 'personal_email', 'personal e-mail', 'email 2', 'secondary email')
-            const primaryEmail = getField(row, 'email', 'e-mail', 'email address')
-            const email = (personalEmail && personalEmail.includes('@')) ? personalEmail : primaryEmail
-            const title = getField(row, 'title', 'job title', 'cargo', 'position')
-            const company = getField(
-              row,
-              'company',
-              'company name',
-              'empresa',
-              'organization'
-            )
-            const linkedinUrl = getField(
-              row,
-              'person linkedin url',
-              'linkedin url',
-              'linkedin',
-              'linkedin_url'
-            )
-
-            return {
-              id: `candidate-${crypto.randomUUID()}`,
-              firstName,
-              lastName,
-              fullName: `${firstName} ${lastName}`.trim() || email.split('@')[0],
-              title,
-              company,
-              email,
-              linkedinUrl,
-              status: 'pending',
-              generatedSubject: '',
-              generatedBody: '',
-              editedSubject: '',
-              editedBody: '',
-              sendAttempts: 0,
-            }
-          })
-
-        if (candidates.length === 0) {
-          reject(new Error('Nenhum contato com email válido encontrado no CSV.'))
-          return
-        }
-
-        // Deduplicate by email within the same CSV
-        const seen = new Set<string>()
-        const deduped = candidates.filter((c) => {
-          const key = c.email.toLowerCase()
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-
-        resolve(deduped)
+        resolve((results.data as unknown[][]).map((r) => (r as unknown[]).map((v) => String(v ?? ''))))
       },
-      error: (error) => {
-        reject(new Error(`Erro ao processar CSV: ${error.message}`))
-      },
+      error: (error) => reject(new Error(`Erro ao processar CSV: ${error.message}`)),
     })
   })
+}
+
+function readRawRowsFromExcel(file: File): Promise<string[][]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Não foi possível ler o arquivo.'))
+    reader.onload = async (e) => {
+      try {
+        // Import dinâmico: mantém o xlsx fora do bundle das páginas que só usam cn().
+        const XLSX = await import('xlsx')
+        const workbook = XLSX.read(new Uint8Array(e.target?.result as ArrayBuffer), { type: 'array' })
+        const sheetName = workbook.SheetNames[0]
+        if (!sheetName) {
+          reject(new Error('A planilha não contém nenhuma aba.'))
+          return
+        }
+        const rows = XLSX.utils.sheet_to_json<string[]>(workbook.Sheets[sheetName], {
+          header: 1,
+          defval: '',
+          blankrows: false,
+        })
+        resolve(rows.map((r) => (Array.isArray(r) ? r.map((v) => String(v ?? '')) : [])))
+      } catch (err) {
+        reject(new Error(`Erro ao ler a planilha: ${err instanceof Error ? err.message : 'formato não suportado'}`))
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+/**
+ * Lê um arquivo de contatos (.csv, .xlsx, .xls, .ods) e devolve os candidatos.
+ * Aceita tanto exportações do Apollo.io/Octopus CRM quanto planilhas simples
+ * no formato Nome | E-mail | Empresa | Cargo.
+ */
+export async function parseContactsFile(file: File): Promise<Candidate[]> {
+  const rawRows = isExcelFile(file)
+    ? await readRawRowsFromExcel(file)
+    : await readRawRowsFromCSV(file)
+
+  if (!rawRows.length) {
+    throw new Error('Arquivo vazio — nenhuma linha encontrada.')
+  }
+
+  const candidates = rowsToCandidates(rawRows)
+
+  if (candidates.length === 0) {
+    const firstRow = rawRows[0]?.filter(Boolean).join(', ') || '(linha vazia)'
+    throw new Error(
+      `Nenhum e-mail válido encontrado. Verifique se existe uma coluna de e-mail. Primeira linha lida: ${firstRow}`
+    )
+  }
+
+  return candidates
+}
+
+/**
+ * @deprecated Use parseContactsFile — aceita CSV e planilhas (.xlsx/.xls/.ods).
+ * Mantido como alias para não quebrar imports existentes.
+ */
+export function parseCSVFile(file: File): Promise<Candidate[]> {
+  return parseContactsFile(file)
 }
 
 export function delay(ms: number): Promise<void> {

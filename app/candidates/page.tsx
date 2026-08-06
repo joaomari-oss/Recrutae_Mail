@@ -2,9 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useDropzone } from 'react-dropzone'
+import { useDropzone, type FileRejection } from 'react-dropzone'
 import { useAppStore } from '@/store'
-import { parseCSVFile } from '@/lib/utils'
+import { parseContactsFile } from '@/lib/utils'
 import { Candidate } from '@/lib/types'
 import {
   Upload,
@@ -41,9 +41,9 @@ export default function CandidatesUploadPage() {
     setParsedCandidates([])
     setFileName(file.name)
     try {
-      const candidates = await parseCSVFile(file)
+      const candidates = await parseContactsFile(file)
       setParsedCandidates(candidates)
-      const suggested = file.name.replace(/\.csv$/i, '').replace(/[_-]/g, ' ')
+      const suggested = file.name.replace(/\.(csv|xlsx|xlsm|xlsb|xls|ods)$/i, '').replace(/[_-]/g, ' ')
       if (!campaignNameRef.current) setCampaignName(suggested)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido ao processar o arquivo.')
@@ -53,15 +53,29 @@ export default function CandidatesUploadPage() {
     }
   }, [])
 
+  // Sem isso, um arquivo com extensão não aceita era descartado em silêncio.
+  const onDropRejected = useCallback((rejections: FileRejection[]) => {
+    const name = rejections[0]?.file?.name ?? 'arquivo'
+    setError(`"${name}" não é um formato aceito. Envie um arquivo .csv, .xlsx, .xls ou .ods.`)
+    setFileName(null)
+  }, [])
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected,
+    // O react-dropzone aceita o arquivo se o MIME OU a extensão baterem — por isso
+    // as extensões são repetidas: o Windows costuma reportar MIME vazio/genérico.
     accept: {
       'text/csv': ['.csv'],
-      'application/vnd.ms-excel': ['.csv'],
-      'text/plain': ['.csv'],
       'application/csv': ['.csv'],
       'text/x-csv': ['.csv'],
-      'application/octet-stream': ['.csv'],
+      'text/plain': ['.csv'],
+      'application/vnd.ms-excel': ['.csv', '.xls'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
+      'application/vnd.ms-excel.sheet.binary.macroEnabled.12': ['.xlsb'],
+      'application/vnd.oasis.opendocument.spreadsheet': ['.ods'],
+      'application/octet-stream': ['.csv', '.xlsx', '.xlsm', '.xlsb', '.xls', '.ods'],
     },
     multiple: false,
     disabled: isLoading,
@@ -87,7 +101,7 @@ export default function CandidatesUploadPage() {
             Nova Campanha
           </h1>
           <p className="text-brand-muted text-base">
-            Importe candidatos do Apollo.io ou Octopus CRM e envie e-mails personalizados com IA
+            Importe candidatos de uma planilha, do Apollo.io ou do Octopus CRM e envie e-mails personalizados com IA
           </p>
         </div>
 
@@ -133,7 +147,7 @@ export default function CandidatesUploadPage() {
               </div>
               <div>
                 <p className="text-brand-white font-semibold text-base">
-                  Arraste seu CSV do Apollo.io ou Octopus CRM
+                  Arraste sua planilha ou CSV de candidatos
                 </p>
                 <p className="text-brand-muted text-sm mt-1">
                   ou{' '}
@@ -142,7 +156,9 @@ export default function CandidatesUploadPage() {
                   </span>
                 </p>
               </div>
-              <p className="text-xs text-brand-muted/60">Apenas arquivos .csv</p>
+              <p className="text-xs text-brand-muted/60">
+                Formatos: .csv, .xlsx, .xls, .ods &nbsp;|&nbsp; Colunas: Nome, E-mail, Empresa (opcional), Cargo
+              </p>
             </div>
           )}
         </div>
