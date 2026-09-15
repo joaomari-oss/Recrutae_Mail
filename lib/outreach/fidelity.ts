@@ -4,7 +4,7 @@ export type VariationCheck =
 
 const TOKEN_RE = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu
 const URL_RE = /https?:\/\/[^\s<>)\]}]+/gi
-const NUMBER_RE = /(?<![\p{L}\p{N}])[-+]?\d+(?:[.,]\d+)?%?(?![\p{L}\p{N}])/gu
+const NUMBER_RE = /(?<![\p{L}\p{N}])[-+−]?\d+(?:[.,]\d+)?%?(?![\p{L}\p{N}])/gu
 
 function normalizedTokens(text: string): string[] {
   const normalized = text

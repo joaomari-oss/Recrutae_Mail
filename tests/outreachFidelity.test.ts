@@ -16,6 +16,7 @@ describe('fidelidade ROS', () => {
     expect(validateRosVariation(base, base.replace('15', '30')).ok).toBe(false)
     expect(validateRosVariation('O investimento é de 15%.', 'O investimento é de 15.').ok).toBe(false)
     expect(validateRosVariation('O investimento é de 15%.', 'O investimento é de -15%.').ok).toBe(false)
+    expect(validateRosVariation('O investimento é de 15%.', 'O investimento é de −15%.').ok).toBe(false)
   })
 
   it('rejeita parágrafos e CTA alterados mesmo dentro do limite lexical', () => {
