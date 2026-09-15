@@ -4,11 +4,14 @@ export type VariationCheck =
 
 const TOKEN_RE = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu
 const URL_RE = /https?:\/\/[^\s<>)\]}]+/gi
-const NUMBER_RE = /(?<![\p{L}\p{N}])\d+(?:[.,]\d+)?%?(?![\p{L}\p{N}])/gu
+const NUMBER_RE = /(?<![\p{L}\p{N}])[-+]?\d+(?:[.,]\d+)?%?(?![\p{L}\p{N}])/gu
 
 function normalizedTokens(text: string): string[] {
-  return (text.normalize('NFD').match(TOKEN_RE) ?? [])
-    .map((token) => token.replace(/[\u0300-\u036f]/g, '').toLowerCase())
+  const normalized = text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+  return normalized.match(TOKEN_RE) ?? []
 }
 
 function urls(text: string): string[] {
@@ -39,25 +42,24 @@ function lcsLength(left: string[], right: string[]): number {
   return previous[right.length]
 }
 
-type CtaAction = 'meeting' | 'reply' | 'share'
+const CTA_ACTION_RE = /\b(?:convers\w*|falar\w*|call\w*|reuniao\w*|agend\w*|respond\w*|resposta\w*|retorn\w*|indic\w*|compartilh\w*)\b/
 
-function ctaActions(text: string): CtaAction[] {
-  const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  const actions: CtaAction[] = []
-  if (/\b(convers|falar|call|reuniao|agend)/.test(normalized)) actions.push('meeting')
-  if (/\b(respond|resposta|retorn)/.test(normalized)) actions.push('reply')
-  if (/\b(indic|compartilh)/.test(normalized)) actions.push('share')
-  return actions
-}
-
-function sameList(left: string[], right: string[]): boolean {
+function sameList(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
+function ctaClauses(text: string): string[][] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map(normalizedTokens)
+    .filter((tokens) => CTA_ACTION_RE.test(tokens.join(' ')))
+}
+
 function ctaStructureMatches(base: string, generated: string): boolean {
-  const baseActions = ctaActions(base)
-  const generatedActions = ctaActions(generated)
-  if (!sameList(baseActions, generatedActions)) return false
+  const baseClauses = ctaClauses(base)
+  const generatedClauses = ctaClauses(generated)
+  if (baseClauses.length !== generatedClauses.length) return false
+  if (!baseClauses.every((clause, index) => sameList(clause, generatedClauses[index]))) return false
 
   const questionCount = (text: string) => (text.match(/\?/g) ?? []).length
   return questionCount(base) === questionCount(generated)

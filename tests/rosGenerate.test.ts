@@ -65,4 +65,54 @@ describe('personalizeRosEmail', () => {
     expect(callProvider).toHaveBeenNthCalledWith(1, 'openai', expect.any(Object))
     expect(callProvider).toHaveBeenNthCalledWith(2, 'groq', expect.any(Object))
   })
+
+  it('mantém o assunto preenchido quando a variação de assunto não é fiel', async () => {
+    const callProvider = vi.fn().mockResolvedValue(JSON.stringify({
+      subject: 'Oferta exclusiva e urgente para você',
+      body: 'Olá, Ana. Podemos conversar?',
+    }))
+
+    const result = await personalizeRosEmail({ ...request, varySubject: true }, { callProvider })
+
+    expect(result).toMatchObject({ subject: 'ROS para Ana', body: 'Olá, Ana. Podemos conversar?' })
+    expect(callProvider).toHaveBeenCalledWith('openai', expect.objectContaining({
+      userPrompt: expect.stringContaining('ASSUNTO PREENCHIDO:\nROS para Ana'),
+    }))
+  })
+
+  it('delimita cada provedor em 15 segundos e cai para o template após ambos expirarem', async () => {
+    vi.useFakeTimers()
+    try {
+      const callProvider = vi.fn((_provider: 'openai' | 'groq', input: { signal?: AbortSignal }) =>
+        new Promise<string>((_resolve, reject) => {
+          input.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        })
+      )
+      const runWithFallback = async (
+        provider: 'openai' | 'groq',
+        run: (candidate: 'openai' | 'groq') => Promise<string>
+      ) => {
+        try {
+          await run(provider)
+        } catch {
+          await run('groq')
+        }
+        throw new Error('all providers timed out')
+      }
+      let settled: unknown
+      void personalizeRosEmail(request, { callProvider, runWithFallback }).then((result) => { settled = result })
+
+      await vi.advanceTimersByTimeAsync(30_001)
+
+      expect(settled).toMatchObject({
+        subject: 'ROS para Ana',
+        body: 'Olá, Ana. Podemos conversar?',
+        usedProvider: 'template',
+        aiUnavailable: true,
+      })
+      expect(callProvider).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
