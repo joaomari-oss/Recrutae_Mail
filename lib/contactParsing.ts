@@ -122,6 +122,7 @@ export type ParsedContactsResult<T> = {
 function headerEmailIndex(headers: string[]): number {
   const aliases = [...EMAIL_PERSONAL, ...EMAIL_PRIMARY]
   return headers.findIndex((header) => {
+    if (looksLikeEmail(header)) return false
     const normalized = header.toLowerCase().trim()
     return aliases.some((alias) => {
       const target = alias.toLowerCase().trim()

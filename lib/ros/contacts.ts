@@ -17,7 +17,8 @@ export function createManualRosContact(input: ManualRosContactInput, seenEmails:
   const email = normalizeContactEmail(input.email)
   if (!email) throw new Error('E-mail obrigatório')
   if (!isValidContactEmail(email)) throw new Error('E-mail inválido')
-  if (seenEmails.has(email)) throw new Error('E-mail duplicado')
+  const normalizedSeenEmails = new Set(Array.from(seenEmails, normalizeContactEmail))
+  if (normalizedSeenEmails.has(email)) throw new Error('E-mail duplicado')
 
   seenEmails.add(email)
   const fullName = input.fullName.trim() || nameFromEmail(email)

@@ -43,6 +43,18 @@ describe('contatos ROS', () => {
     }])
   })
 
+  it('preserva a primeira linha sem cabeçalho quando o e-mail contém contato', () => {
+    const result = rowsToRosContactsDetailed([
+      ['contato@example.com', 'Ana'],
+      ['bruno@example.com', 'Bruno'],
+    ])
+
+    expect(result.contacts.map((contact) => contact.email)).toEqual([
+      'contato@example.com',
+      'bruno@example.com',
+    ])
+  })
+
   it('aplica a mesma validação ao contato manual', () => {
     expect(() => createManualRosContact(
       { fullName: 'Ana', email: 'errado', company: '', position: '' },
@@ -55,5 +67,12 @@ describe('contatos ROS', () => {
       { fullName: 'Ana', email: 'N/A', company: '', position: '' },
       new Set()
     )).toThrow('E-mail obrigatório')
+  })
+
+  it('detecta duplicata manual mesmo quando o conjunto existente usa maiúsculas', () => {
+    expect(() => createManualRosContact(
+      { fullName: 'Ana', email: 'ana@example.com', company: '', position: '' },
+      new Set(['ANA@example.com'])
+    )).toThrow('E-mail duplicado')
   })
 })
