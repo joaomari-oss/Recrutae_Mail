@@ -58,7 +58,7 @@ function readRawRowsFromExcel(file: File): Promise<string[][]> {
 }
 
 /** Lê as linhas cruas de um arquivo de contatos (.csv ou planilha). */
-async function readContactRows(file: File): Promise<string[][]> {
+export async function readContactRows(file: File): Promise<string[][]> {
   const rawRows = isExcelFile(file)
     ? await readRawRowsFromExcel(file)
     : await readRawRowsFromCSV(file)

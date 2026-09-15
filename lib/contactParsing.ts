@@ -1,5 +1,6 @@
 import type { Candidate } from './types'
 import type { ClientContact } from './clientTypes'
+import type { RosContact } from './rosTypes'
 
 /**
  * Núcleo puro de parsing de contatos — recebe linhas cruas (string[][]) vindas de
@@ -65,8 +66,18 @@ const TITLE = ['title', 'job title', 'cargo', 'position', 'posicao', 'posição'
 const COMPANY = ['company', 'company name', 'empresa', 'organization', 'organização', 'account name', 'employer', 'empresa atual']
 const LINKEDIN = ['person linkedin url', 'linkedin url', 'linkedin', 'linkedin_url', 'perfil linkedin']
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+export function isValidContactEmail(value: string): boolean {
+  return EMAIL_PATTERN.test(value.trim())
+}
+
+export function normalizeContactEmail(value: unknown): string {
+  return clean(cell(value)).toLowerCase()
+}
+
 function looksLikeEmail(value: string): boolean {
-  return value.includes('@') && value.includes('.')
+  return isValidContactEmail(value)
 }
 
 /** "joao.paulo_silva@x.com" -> "Joao Paulo Silva" — usado quando não há coluna de nome. */
@@ -97,6 +108,28 @@ export type ParsedContact = {
   linkedinUrl: string
 }
 
+export type RejectedContactRow = {
+  rowNumber: number
+  reason: 'missing_email' | 'invalid_email' | 'duplicate'
+  values: string[]
+}
+
+export type ParsedContactsResult<T> = {
+  contacts: T[]
+  rejected: RejectedContactRow[]
+}
+
+function headerEmailIndex(headers: string[]): number {
+  const aliases = [...EMAIL_PERSONAL, ...EMAIL_PRIMARY]
+  return headers.findIndex((header) => {
+    const normalized = header.toLowerCase().trim()
+    return aliases.some((alias) => {
+      const target = alias.toLowerCase().trim()
+      return normalized === target || normalized.includes(target)
+    })
+  })
+}
+
 /**
  * Converte linhas cruas em contatos normalizados.
  *
@@ -108,12 +141,12 @@ export type ParsedContact = {
  * Regras: e-mail pessoal tem prioridade sobre corporativo, placeholders ("-", "N/A")
  * viram vazio, linhas sem e-mail válido são descartadas e e-mails repetidos são deduplicados.
  */
-export function parseContactRows(allRows: unknown[][]): ParsedContact[] {
+export function parseContactRowsDetailed(allRows: unknown[][]): ParsedContactsResult<ParsedContact> {
   const rows = (allRows || [])
     .map((r) => (Array.isArray(r) ? r.map(cell) : []))
     .filter((r) => r.some((v) => v !== ''))
 
-  if (!rows.length) return []
+  if (!rows.length) return { contacts: [], rejected: [] }
 
   // Qual coluna concentra os e-mails?
   const maxCols = Math.max(...rows.map((r) => r.length))
@@ -123,17 +156,23 @@ export function parseContactRows(allRows: unknown[][]): ParsedContact[] {
       if (looksLikeEmail(row[i])) emailScores[i]++
     }
   }
-  const emailColIdx = emailScores.indexOf(Math.max(...emailScores))
-  if (!emailScores.length || emailScores[emailColIdx] === 0) return []
+  const scoreEmailColIdx = emailScores.indexOf(Math.max(...emailScores))
+  const aliasedEmailColIdx = headerEmailIndex(rows[0])
+  const emailColIdx = aliasedEmailColIdx >= 0 ? aliasedEmailColIdx : scoreEmailColIdx
+  if (emailColIdx < 0 || (!emailScores.length || emailScores[scoreEmailColIdx] === 0) && aliasedEmailColIdx < 0) {
+    return { contacts: [], rejected: [] }
+  }
 
   // Se a célula de e-mail da primeira linha não é um e-mail, ela é cabeçalho.
-  const hasHeader = !looksLikeEmail(rows[0][emailColIdx] ?? '')
+  const hasHeader = aliasedEmailColIdx >= 0 || !looksLikeEmail(rows[0][emailColIdx] ?? '')
   const headers = hasHeader ? rows[0] : []
   const dataRows = hasHeader ? rows.slice(1) : rows
 
   const contacts: ParsedContact[] = []
+  const rejected: RejectedContactRow[] = []
+  const seen = new Set<string>()
 
-  for (const row of dataRows) {
+  for (const [dataIndex, row] of dataRows.entries()) {
     let email = ''
     let firstName = ''
     let lastName = ''
@@ -172,7 +211,22 @@ export function parseContactRows(allRows: unknown[][]): ParsedContact[] {
       title = rest[1]?.v || ''
     }
 
-    if (!looksLikeEmail(email)) continue
+    const normalizedEmail = normalizeContactEmail(email)
+    const rowNumber = dataIndex + (hasHeader ? 2 : 1)
+    if (!normalizedEmail) {
+      rejected.push({ rowNumber, reason: 'missing_email', values: row })
+      continue
+    }
+    if (!looksLikeEmail(normalizedEmail)) {
+      rejected.push({ rowNumber, reason: 'invalid_email', values: row })
+      continue
+    }
+    if (seen.has(normalizedEmail)) {
+      rejected.push({ rowNumber, reason: 'duplicate', values: row })
+      continue
+    }
+    seen.add(normalizedEmail)
+    email = normalizedEmail
 
     // Sem coluna de nome: deriva do próprio e-mail para a saudação nunca ficar vazia.
     if (!fullName) fullName = nameFromEmail(email)
@@ -185,14 +239,11 @@ export function parseContactRows(allRows: unknown[][]): ParsedContact[] {
     contacts.push({ firstName, lastName, fullName, email, title, company, linkedinUrl })
   }
 
-  // Deduplica por e-mail (case-insensitive), mantendo a primeira ocorrência.
-  const seen = new Set<string>()
-  return contacts.filter((c) => {
-    const key = c.email.toLowerCase()
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
+  return { contacts, rejected }
+}
+
+export function parseContactRows(allRows: unknown[][]): ParsedContact[] {
+  return parseContactRowsDetailed(allRows).contacts
 }
 
 /** Linhas cruas -> candidatos (fluxo de recrutamento, aba Candidatos). */
@@ -232,4 +283,27 @@ export function rowsToClientContacts(allRows: unknown[][]): ClientContact[] {
     editedBody: '',
     sendAttempts: 0,
   }))
+}
+
+/** Linhas cruas -> contatos ROS, preservando as linhas rejeitadas para revisão no upload. */
+export function rowsToRosContactsDetailed(allRows: unknown[][]): ParsedContactsResult<RosContact> {
+  const result = parseContactRowsDetailed(allRows)
+  return {
+    contacts: result.contacts.map((contact) => ({
+      id: crypto.randomUUID(),
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      fullName: contact.fullName,
+      email: contact.email,
+      company: contact.company,
+      position: contact.title,
+      status: 'pending' as const,
+      generatedSubject: '',
+      generatedBody: '',
+      editedSubject: '',
+      editedBody: '',
+      sendAttempts: 0,
+    })),
+    rejected: result.rejected,
+  }
 }
