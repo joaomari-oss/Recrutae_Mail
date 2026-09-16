@@ -141,7 +141,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): { html: string; 
         <td style="padding-left:14px;border-left:3px solid ${theme.accent};vertical-align:middle;">
           <p style="margin:0;font-size:15px;line-height:1.3;font-weight:700;color:${theme.dark};">${name}</p>
           ${role ? `<p style="margin:3px 0 0;font-size:13px;line-height:1.4;color:#6B7280;">${role}</p>` : ''}
-          <p style="margin:6px 0 0;font-size:${theme.signatureLabelFontSize}px;line-height:1.4;font-weight:700;letter-spacing:${theme.signatureLabelLetterSpacing};color:${theme.signatureLabelColor};">${theme.label}</p>
+          ${name === escapeHtml(theme.label) ? '' : `<p style="margin:6px 0 0;font-size:${theme.signatureLabelFontSize}px;line-height:1.4;font-weight:700;letter-spacing:${theme.signatureLabelLetterSpacing};color:${theme.signatureLabelColor};">${theme.label}</p>`}
           ${contacts ? `<p style="margin:7px 0 0;">${contacts}</p>` : ''}
         </td>
       </tr></table>

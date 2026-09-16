@@ -381,7 +381,7 @@ export default function RosComposePage() {
           </p>
           <RosEmailPreview
             body={preview.body}
-            recruiterName={form.recruiterName || 'Recrutaê | OS'}
+            recruiterName={form.recruiterName}
             recruiterRole={form.recruiterRole}
             recruiterLinkedin={form.recruiterLinkedin}
             recruiterWhatsapp={form.recruiterWhatsapp}

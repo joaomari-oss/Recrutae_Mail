@@ -110,3 +110,30 @@ describe('assinatura com WhatsApp', () => {
     expect(renderOutreachEmail({ ...base, recruiterWhatsapp: '' }).html).not.toContain('wa.me')
   })
 })
+
+describe('assinatura sem repetição', () => {
+  it('não repete a marca quando o remetente não tem nome', async () => {
+    const { renderOutreachEmail } = await import('@/lib/outreach/emailHtml')
+
+    const rendered = renderOutreachEmail({
+      body: 'Olá!', recruiterName: '', recruiterRole: '', recruiterLinkedin: '',
+      recruiterWhatsapp: '', brand: 'ros', logoUrl: 'https://mail.recrutae.com.br/ros/recrutae-ros.png',
+    })
+
+    // Conta só o texto visível: o alt da logo também traz a marca.
+    expect(rendered.html.match(/>Recrutaê \| OS</g)).toHaveLength(1)
+  })
+
+  it('mostra nome e marca quando o remetente tem nome', async () => {
+    const { renderOutreachEmail } = await import('@/lib/outreach/emailHtml')
+
+    const rendered = renderOutreachEmail({
+      body: 'Olá!', recruiterName: 'João Mari', recruiterRole: '', recruiterLinkedin: '',
+      recruiterWhatsapp: '', brand: 'ros', logoUrl: 'https://mail.recrutae.com.br/ros/recrutae-ros.png',
+    })
+
+    expect(rendered.html).toContain('João Mari')
+    // Conta só o texto visível: o alt da logo também traz a marca.
+    expect(rendered.html.match(/>Recrutaê \| OS</g)).toHaveLength(1)
+  })
+})
