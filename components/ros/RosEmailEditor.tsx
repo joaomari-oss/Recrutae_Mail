@@ -21,6 +21,7 @@ export type RosEmailEditorProps = {
   onApprove: (id: string) => void
   onRegenerate: (id: string) => void
   onSkip?: () => void
+  onDiscard?: (id: string) => void
   generation?: RosGenerationInfo
 }
 
@@ -32,7 +33,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export function RosEmailEditor({
-  contact, config, onSave, onApprove, onRegenerate, onSkip, generation,
+  contact, config, onSave, onApprove, onRegenerate, onSkip, onDiscard, generation,
 }: RosEmailEditorProps) {
   const [subject, setSubject] = useState(contact.editedSubject || contact.generatedSubject)
   const [body, setBody] = useState(contact.editedBody || contact.generatedBody)
@@ -166,6 +167,12 @@ export function RosEmailEditor({
           <RefreshCw className="h-4 w-4" />
           Regenerar
         </button>
+        {onDiscard && (
+          <button type="button" onClick={() => onDiscard(contact.id)}
+            className="inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-brand-muted transition-colors hover:text-brand-error">
+            Não enviar
+          </button>
+        )}
         {onSkip && (
           <button type="button" onClick={onSkip}
             className="inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-brand-muted transition-colors hover:text-brand-white">

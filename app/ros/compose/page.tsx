@@ -5,16 +5,16 @@ import { useRouter } from 'next/navigation'
 import { ArrowRight, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRosStore } from '@/store/rosStore'
-import { isCompleteRosContact } from '@/lib/ros/contacts'
+import { isCompleteRosContact, PENDING_CONTACTS_KEY } from '@/lib/ros/contacts'
 import { hasUnsafeLink } from '@/lib/outreach/richText'
+import { DEFAULT_ROS_SENDER, isRosSenderEmail, ROS_SENDER_DOMAIN } from '@/lib/ros/senders'
 import { renderEmailTemplate } from '@/lib/templateRender'
 import type { RosCampaign, RosCampaignConfig, RosContact } from '@/lib/rosTypes'
 import { RosBodyEditor } from '@/components/ros/RosBodyEditor'
 import { RosEmailPreview } from '@/components/ros/RosEmailPreview'
 
-const PENDING_CONTACTS_KEY = 'ros-pending-contacts'
-const DEFAULT_FROM_EMAIL = 'contato@recrutae.com.br'
-const RECRUTAE_EMAIL = /^[^\s@]+@recrutae\.com\.br$/i
+const DEFAULT_FROM_EMAIL = DEFAULT_ROS_SENDER
+const CUSTOM = '__outro__'
 
 type Form = {
   name: string
@@ -53,8 +53,8 @@ function validate(form: Form): Partial<Record<keyof Form, string>> {
   if (!form.emailTemplate.trim()) errors.emailTemplate = 'A mensagem é obrigatória.'
   else if (hasUnsafeLink(form.emailTemplate)) errors.emailTemplate = 'Há link com endereço não permitido.'
   if (!form.recruiterName.trim()) errors.recruiterName = 'Informe quem assina o e-mail.'
-  if (!RECRUTAE_EMAIL.test(form.recruiterEmail.trim())) {
-    errors.recruiterEmail = 'O remetente deve usar o domínio @recrutae.com.br.'
+  if (!isRosSenderEmail(form.recruiterEmail)) {
+    errors.recruiterEmail = `O remetente deve usar o domínio @${ROS_SENDER_DOMAIN}.`
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.replyTo.trim())) {
     errors.replyTo = 'Informe um e-mail válido para resposta.'
@@ -82,6 +82,9 @@ export default function RosComposePage() {
   // falha, trocar de id faria os contatos pertencerem a outra campanha e o
   // servidor recusaria o lote para sempre.
   const campaignIdRef = useRef<string | null>(null)
+  const [senderOptions, setSenderOptions] = useState<string[]>([DEFAULT_FROM_EMAIL])
+  const [senderMode, setSenderMode] = useState<string>(DEFAULT_FROM_EMAIL)
+  const [replyMode, setReplyMode] = useState<string>('same')
 
   useEffect(() => { setContacts(readPendingContacts()) }, [])
 
@@ -89,8 +92,11 @@ export default function RosComposePage() {
     let active = true
     fetch('/api/ros/preflight')
       .then((response) => response.json())
-      .then((result: { fromEmail?: string }) => {
-        if (!active || !result?.fromEmail || senderTouched.current) return
+      .then((result: { fromEmail?: string; senderOptions?: string[] }) => {
+        if (!active) return
+        if (result?.senderOptions?.length) setSenderOptions(result.senderOptions)
+        if (!result?.fromEmail || senderTouched.current) return
+        setSenderMode(result.fromEmail)
         setForm((current) => ({
           ...current,
           recruiterEmail: result.fromEmail as string,
@@ -101,6 +107,15 @@ export default function RosComposePage() {
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // "Mesmo e-mail de envio" segue o remetente mesmo quando ele muda por um
+  // caminho que não passa pelo seletor, como a resposta do preflight.
+  useEffect(() => {
+    if (replyMode !== 'same') return
+    setForm((current) => (current.replyTo === current.recruiterEmail
+      ? current
+      : { ...current, replyTo: current.recruiterEmail }))
+  }, [replyMode, form.recruiterEmail])
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
@@ -230,18 +245,74 @@ export default function RosComposePage() {
 
             <Field label="E-mail de envio" error={errors.recruiterEmail} errorId="ros-erro-remetente">
               {(id) => (
-                <input id={id} type="email" value={form.recruiterEmail}
-                  aria-invalid={errors.recruiterEmail ? true : undefined}
-                  aria-describedby={errors.recruiterEmail ? 'ros-erro-remetente' : undefined}
-                  onChange={(e) => { senderTouched.current = true; set('recruiterEmail', e.target.value) }}
-                  className={`${inputClass} font-mono text-xs`} />
+                <div className="space-y-2">
+                  <select
+                    id={id}
+                    value={senderMode}
+                    aria-invalid={errors.recruiterEmail ? true : undefined}
+                    aria-describedby={errors.recruiterEmail ? 'ros-erro-remetente' : undefined}
+                    onChange={(e) => {
+                      senderTouched.current = true
+                      setSenderMode(e.target.value)
+                      // "Outro" esvazia o campo para o operador digitar o endereço.
+                      set('recruiterEmail', e.target.value === CUSTOM ? '' : e.target.value)
+                    }}
+                    className={`${inputClass} font-mono text-xs`}
+                  >
+                    {senderOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                    <option value={CUSTOM}>Outro endereço @{ROS_SENDER_DOMAIN}…</option>
+                  </select>
+                  {senderMode === CUSTOM && (
+                    <input
+                      type="email"
+                      aria-label="Outro e-mail de envio"
+                      placeholder={`nome@${ROS_SENDER_DOMAIN}`}
+                      value={form.recruiterEmail}
+                      onChange={(e) => { senderTouched.current = true; set('recruiterEmail', e.target.value) }}
+                      className={`${inputClass} font-mono text-xs`}
+                    />
+                  )}
+                </div>
               )}
             </Field>
 
-            <Field label="Responder para" error={errors.replyTo}>
+            <Field label="Responder para" error={errors.replyTo} errorId="ros-erro-resposta">
               {(id) => (
-                <input id={id} type="email" value={form.replyTo} onChange={(e) => set('replyTo', e.target.value)}
-                  className={`${inputClass} font-mono text-xs`} />
+                <div className="space-y-2">
+                  <select
+                    id={id}
+                    value={replyMode}
+                    aria-invalid={errors.replyTo ? true : undefined}
+                    aria-describedby={errors.replyTo ? 'ros-erro-resposta' : undefined}
+                    onChange={(e) => {
+                      setReplyMode(e.target.value)
+                      if (e.target.value === CUSTOM) set('replyTo', '')
+                      else if (e.target.value !== 'same') set('replyTo', e.target.value)
+                    }}
+                    className={`${inputClass} font-mono text-xs`}
+                  >
+                    <option value="same">Mesmo e-mail de envio</option>
+                    {senderOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                    <option value={CUSTOM}>Outro endereço…</option>
+                  </select>
+                  {replyMode === CUSTOM && (
+                    <input
+                      type="email"
+                      aria-label="Outro e-mail para respostas"
+                      placeholder="respostas@exemplo.com"
+                      value={form.replyTo}
+                      onChange={(e) => set('replyTo', e.target.value)}
+                      className={`${inputClass} font-mono text-xs`}
+                    />
+                  )}
+                  <p className="text-xs text-brand-muted/70">
+                    As respostas dos contatos chegam neste endereço.
+                  </p>
+                </div>
               )}
             </Field>
 

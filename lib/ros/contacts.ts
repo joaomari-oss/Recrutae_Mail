@@ -122,3 +122,6 @@ export function isCompleteRosContact(value: unknown): value is RosContact {
     // Mesmo formato que a API exige: uma linha torta aqui reprovaria o lote inteiro.
     && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((contact.email as string).trim())
 }
+
+/** Chave de mão dupla entre a tela de contatos e a de composição. */
+export const PENDING_CONTACTS_KEY = 'ros-pending-contacts'

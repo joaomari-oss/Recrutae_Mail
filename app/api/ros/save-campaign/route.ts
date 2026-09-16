@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { supabase } from '@/lib/supabase'
 import { OutreachError, saveRosCampaign } from '@/lib/outreach/repository'
 import type { RosCampaign, RosCampaignConfig, RosContact } from '@/lib/rosTypes'
 
@@ -27,8 +26,10 @@ function validPayload(value: unknown): value is { campaign: RosCampaign; config:
 }
 
 export async function POST(request: NextRequest) {
-  const db = supabaseAdmin ?? supabase
-  if (!db) return NextResponse.json({ success: false, error: 'Supabase não configurado.' }, { status: 503 })
+  // As politicas publicas nao alcancam linhas ROS; sem service_role a gravacao
+  // falharia por permissao em vez de dizer o que esta faltando.
+  const db = supabaseAdmin
+  if (!db) return NextResponse.json({ success: false, error: 'A Divulgação ROS exige SUPABASE_SERVICE_ROLE_KEY: as linhas ROS não são acessíveis pela chave pública.' }, { status: 503 })
   let body: unknown
   try { body = await request.json() } catch {
     return NextResponse.json({ success: false, error: 'Body inválido.' }, { status: 400 })

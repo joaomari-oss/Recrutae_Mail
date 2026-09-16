@@ -8,6 +8,8 @@ export type RosPreflightResult = {
   canSend: boolean
   checks: RosPreflightCheck[]
   fromEmail: string
+  /** Endereços do domínio oferecidos na composição. */
+  senderOptions: string[]
 }
 
 export type RosPreflightDependencies = {
@@ -16,8 +18,10 @@ export type RosPreflightDependencies = {
   resolveTxt: (hostname: string) => Promise<string[][]>
 }
 
-const DEFAULT_FROM_EMAIL = 'contato@recrutae.com.br'
-const RECRUTAE_DOMAIN = 'recrutae.com.br'
+import { DEFAULT_ROS_SENDER, listRosSenderOptions, ROS_SENDER_DOMAIN } from './senders'
+
+const DEFAULT_FROM_EMAIL = DEFAULT_ROS_SENDER
+const RECRUTAE_DOMAIN = ROS_SENDER_DOMAIN
 
 function isHttpsUrl(value: string | undefined): boolean {
   if (!value) return false
@@ -91,5 +95,5 @@ export async function runRosPreflight(deps: RosPreflightDependencies): Promise<R
 
   const blockingKeys = new Set<RosPreflightCheck['key']>(['apiKey', 'domain', 'appUrl', 'unsubscribe', 'database'])
   const canSend = !checks.some(check => blockingKeys.has(check.key) && check.status === 'error')
-  return { canSend, checks, fromEmail }
+  return { canSend, checks, fromEmail, senderOptions: listRosSenderOptions(deps.env) }
 }

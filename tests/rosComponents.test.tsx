@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
 import type { RosContact } from '@/lib/rosTypes'
@@ -286,7 +286,13 @@ function mockRosApi(saveResponse: unknown = { success: true }, saveStatus = 200)
     const url = String(input)
     calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined })
     if (url.includes('/api/ros/preflight')) {
-      return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Response
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br',
+          senderOptions: ['contato@recrutae.com.br', 'comercial@recrutae.com.br'],
+        }),
+      } as Response
     }
     return { ok: saveStatus < 400, status: saveStatus, json: async () => saveResponse } as Response
   }))
@@ -323,9 +329,8 @@ describe('composição da campanha ROS', () => {
     await renderCompose()
     await fillCompose(user)
 
-    const sender = screen.getByLabelText('E-mail de envio')
-    await user.clear(sender)
-    await user.type(sender, 'contato@gmail.com')
+    await user.selectOptions(screen.getByLabelText('E-mail de envio'), '__outro__')
+    await user.type(screen.getByLabelText('Outro e-mail de envio'), 'contato@gmail.com')
     await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
 
     expect(screen.getByText(/deve usar o domínio @recrutae\.com\.br/i)).toBeInTheDocument()
@@ -543,12 +548,12 @@ describe('corridas e retentativa na composição', () => {
 
     await renderCompose()
 
-    const sender = screen.getByLabelText('E-mail de envio')
-    await user.clear(sender)
-    await user.type(sender, 'joao@recrutae.com.br')
+    await user.selectOptions(screen.getByLabelText('E-mail de envio'), '__outro__')
+    const custom = screen.getByLabelText('Outro e-mail de envio')
+    await user.type(custom, 'joao@recrutae.com.br')
 
     releasePreflight()
-    await vi.waitFor(() => expect(sender).toHaveValue('joao@recrutae.com.br'))
+    await vi.waitFor(() => expect(custom).toHaveValue('joao@recrutae.com.br'))
   })
 
   it('repete o salvamento com o mesmo id de campanha depois de uma falha', async () => {
@@ -716,5 +721,69 @@ describe('histórico ROS', () => {
     await user.click(screen.getByRole('button', { name: /excluir campanha divulgação setembro/i }))
 
     await vi.waitFor(() => expect(deletedId).toBe('ros-1'))
+  })
+})
+
+describe('escolha de remetente e destino das respostas', () => {
+  it('oferece os endereços do domínio e faz a resposta seguir o envio', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const calls = mockRosApi()
+    await renderCompose()
+
+    const sender = await screen.findByLabelText('E-mail de envio')
+    // Os dois seletores oferecem os mesmos endereços; a busca fica no de envio.
+    await vi.waitFor(() => expect(within(sender).getByRole('option', { name: 'comercial@recrutae.com.br' })).toBeInTheDocument())
+
+    await user.selectOptions(sender, 'comercial@recrutae.com.br')
+
+    // "Mesmo e-mail de envio" é o padrão: a resposta acompanha a escolha.
+    expect(screen.getByLabelText('Responder para')).toHaveValue('same')
+
+    await fillCompose(user)
+    await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
+
+    const save = await vi.waitFor(() => {
+      const found = calls.find((call) => call.url.includes('save-campaign'))
+      if (!found) throw new Error('save-campaign não foi chamado')
+      return found
+    })
+    const body = save.body as { config: { recruiterEmail: string; replyTo: string } }
+    expect(body.config.recruiterEmail).toBe('comercial@recrutae.com.br')
+    expect(body.config.replyTo).toBe('comercial@recrutae.com.br')
+  })
+
+  it('permite direcionar as respostas para outro endereço', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const calls = mockRosApi()
+    await renderCompose()
+
+    await user.selectOptions(await screen.findByLabelText('Responder para'), '__outro__')
+    await user.type(screen.getByLabelText('Outro e-mail para respostas'), 'respostas@parceiro.com')
+
+    await fillCompose(user)
+    await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
+
+    const save = await vi.waitFor(() => {
+      const found = calls.find((call) => call.url.includes('save-campaign'))
+      if (!found) throw new Error('save-campaign não foi chamado')
+      return found
+    })
+    const body = save.body as { config: { recruiterEmail: string; replyTo: string } }
+    expect(body.config.replyTo).toBe('respostas@parceiro.com')
+    expect(body.config.recruiterEmail).toBe('contato@recrutae.com.br')
+  })
+
+  it('recusa endereço de resposta inválido', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const calls = mockRosApi()
+    await renderCompose()
+    await fillCompose(user)
+
+    await user.selectOptions(screen.getByLabelText('Responder para'), '__outro__')
+    await user.type(screen.getByLabelText('Outro e-mail para respostas'), 'sem-arroba')
+    await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
+
+    expect(screen.getByText(/e-mail válido para resposta/i)).toBeInTheDocument()
+    expect(calls.some((call) => call.url.includes('save-campaign'))).toBe(false)
   })
 })

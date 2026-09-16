@@ -75,15 +75,9 @@ alter table client_campaigns alter column contact_count   set default 0;
 alter table client_campaigns alter column sent_count      set default 0;
 alter table client_campaigns alter column failed_count    set default 0;
 
--- RLS — habilita e cria políticas permissivas (necessário para chave anon)
+-- RLS — as políticas ficam mais abaixo, depois que campaign_kind existir.
 alter table client_campaigns enable row level security;
 alter table client_contacts  enable row level security;
-drop policy if exists "recrutae_all_campaigns" on client_campaigns;
-create policy "recrutae_all_campaigns" on client_campaigns
-  for all to anon, authenticated using (true) with check (true);
-drop policy if exists "recrutae_all_contacts" on client_contacts;
-create policy "recrutae_all_contacts" on client_contacts
-  for all to anon, authenticated using (true) with check (true);
 
 -- Divulgação ROS: additive and safe to run repeatedly.
 alter table client_campaigns add column if not exists campaign_kind text not null default 'clients';
@@ -180,6 +174,31 @@ alter table email_events add column if not exists contact_id text;
 alter table email_events add column if not exists delivery_id text;
 create unique index if not exists email_events_delivery_id_unique
   on email_events(delivery_id) where delivery_id is not null;
+
+-- As políticas públicas preservam o acesso de Candidatos e Clientes, que leem
+-- direto do navegador com a chave anon, e tiram as linhas ROS do alcance:
+-- elas guardam destinatário e corpo de e-mail. O service_role ignora RLS, então
+-- as rotas de servidor do ROS continuam funcionando.
+drop policy if exists "recrutae_all_campaigns" on client_campaigns;
+create policy "recrutae_all_campaigns" on client_campaigns
+  for all to anon, authenticated
+  using (campaign_kind is distinct from 'ros')
+  with check (campaign_kind is distinct from 'ros');
+drop policy if exists "recrutae_all_contacts" on client_contacts;
+create policy "recrutae_all_contacts" on client_contacts
+  for all to anon, authenticated
+  using (
+    not exists (
+      select 1 from client_campaigns c
+      where c.id = client_contacts.campaign_id and c.campaign_kind = 'ros'
+    )
+  )
+  with check (
+    not exists (
+      select 1 from client_campaigns c
+      where c.id = client_contacts.campaign_id and c.campaign_kind = 'ros'
+    )
+  );
 `
 
 export async function GET() {

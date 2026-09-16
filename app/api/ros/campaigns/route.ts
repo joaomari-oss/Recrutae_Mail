@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { supabase } from '@/lib/supabase'
 import {
   deleteRosCampaign,
   listRosCampaignContactStatuses,
@@ -11,7 +10,9 @@ import {
 export const dynamic = 'force-dynamic'
 
 function database() {
-  return supabaseAdmin ?? supabase
+  // Linhas ROS sao invisiveis para a chave publica desde o endurecimento das
+  // politicas; so o service_role enxerga o historico.
+  return supabaseAdmin
 }
 
 function failure(error: unknown) {
@@ -23,7 +24,7 @@ function failure(error: unknown) {
 
 export async function GET(request: NextRequest) {
   const db = database()
-  if (!db) return NextResponse.json({ error: 'Supabase não configurado.' }, { status: 503 })
+  if (!db) return NextResponse.json({ error: 'A Divulgação ROS exige SUPABASE_SERVICE_ROLE_KEY: as linhas ROS não são acessíveis pela chave pública.' }, { status: 503 })
   const campaignId = request.nextUrl.searchParams.get('campaignId')
   try {
     if (campaignId?.trim()) {
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const db = database()
-  if (!db) return NextResponse.json({ error: 'Supabase não configurado.' }, { status: 503 })
+  if (!db) return NextResponse.json({ error: 'A Divulgação ROS exige SUPABASE_SERVICE_ROLE_KEY: as linhas ROS não são acessíveis pela chave pública.' }, { status: 503 })
   const campaignId = request.nextUrl.searchParams.get('campaignId')
   if (!campaignId?.trim()) return NextResponse.json({ error: 'campaignId obrigatório.' }, { status: 400 })
   try {

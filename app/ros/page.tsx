@@ -5,15 +5,19 @@ import { useRouter } from 'next/navigation'
 import { useDropzone, type FileRejection } from 'react-dropzone'
 import { AlertCircle, ArrowRight, CheckCircle2, Download, FileText, Upload, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import { finalizeRosContacts, findRosContactIssues, isCompleteRosContact, parseRosContactsFile } from '@/lib/ros/contacts'
+import {
+  finalizeRosContacts,
+  findRosContactIssues,
+  isCompleteRosContact,
+  parseRosContactsFile,
+  PENDING_CONTACTS_KEY,
+} from '@/lib/ros/contacts'
 import { normalizeContactEmail } from '@/lib/contactParsing'
 import { exportToCSV } from '@/lib/utils'
 import type { RejectedContactRow } from '@/lib/contactParsing'
 import type { RosContact } from '@/lib/rosTypes'
 import { RosContactTable } from '@/components/ros/RosContactTable'
 import { RosManualContactForm } from '@/components/ros/RosManualContactForm'
-
-export const PENDING_CONTACTS_KEY = 'ros-pending-contacts'
 
 const REJECTION_LABELS: Record<RejectedContactRow['reason'], string> = {
   missing_email: 'Sem e-mail',

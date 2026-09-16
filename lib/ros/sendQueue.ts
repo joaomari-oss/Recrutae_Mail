@@ -3,9 +3,10 @@ import type { RosContact } from '@/lib/rosTypes'
 /** Status do contato no servidor, como a rota de campanhas devolve. */
 export type RosServerContactStatus = {
   id: string
-  status: RosContact['status']
+  status: RosContact['status'] | string
   sentAt?: string
   messageId?: string
+  errorMessage?: string
 }
 
 export const INTERRUPTED_MESSAGE = 'Envio interrompido antes de concluir. Tente novamente.'
@@ -31,26 +32,35 @@ export function reconcileSendingContacts(
 ): Array<{ id: string; updates: Partial<RosContact> }> {
   const byId = new Map(serverStatuses.map((row) => [row.id, row]))
 
-  return contacts.flatMap((contact) => {
-    if (contact.status !== 'sending') return []
+  const updates: Array<{ id: string; updates: Partial<RosContact> }> = []
+
+  for (const contact of contacts) {
+    if (contact.status !== 'sending') continue
     const server = byId.get(contact.id)
-    if (!server) return []
+    if (!server) continue
 
     if (server.status === 'sent') {
-      return [{
+      updates.push({
         id: contact.id,
         updates: {
           status: 'sent' as const,
           sentAt: server.sentAt,
           resendMessageId: server.messageId,
         },
-      }]
+      })
+      continue
     }
     // Ainda `sending` no servidor: a tentativa pode estar em voo, não mexer.
-    if (server.status === 'sending') return []
+    if (server.status === 'sending') continue
 
-    return [{ id: contact.id, updates: { status: 'failed' as const, errorMessage: INTERRUPTED_MESSAGE } }]
-  })
+    // O motivo real do servidor explica melhor do que a mensagem genérica.
+    updates.push({
+      id: contact.id,
+      updates: { status: 'failed' as const, errorMessage: server.errorMessage || INTERRUPTED_MESSAGE },
+    })
+  }
+
+  return updates
 }
 
 /** Motivo fixo para contato bloqueado por supressão — o resumo conta por ele. */

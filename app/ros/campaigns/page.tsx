@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight, Loader2, Plus, RefreshCw, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRosStore } from '@/store/rosStore'
+import { reconcileSendingContacts, type RosServerContactStatus } from '@/lib/ros/sendQueue'
 import type { RosContact } from '@/lib/rosTypes'
 
 type RosCampaignRow = {
@@ -60,16 +61,48 @@ export default function RosCampaignsPage() {
 
   useEffect(() => { void load() }, [load])
 
-  const reopen = (id: string) => {
+  const reopen = async (id: string) => {
     const contacts: RosContact[] = contactsByCampaign[id] ?? []
     if (!contacts.length) {
       toast.error('Esta campanha não está mais nesta aba. Os resultados continuam no histórico.')
       return
     }
-    // `sent` é terminal: reabrir devolve ao fluxo apenas quem não recebeu.
-    contacts.forEach((contact) => {
-      if (contact.status !== 'sent') updateContact(id, contact.id, { status: 'pending', errorMessage: undefined })
+
+    // O servidor decide antes de qualquer coisa. Rebaixar um contato que está
+    // `sending` sem confirmar seria o caminho mais curto para enviar duas vezes.
+    let serverContacts: RosServerContactStatus[] | null = null
+    try {
+      const response = await fetch(`/api/ros/campaigns?campaignId=${encodeURIComponent(id)}`)
+      const result = await response.json()
+      if (!response.ok) throw new Error(result?.error ?? 'Não foi possível consultar a campanha.')
+      serverContacts = result.contacts ?? []
+    } catch (cause) {
+      toast.error(cause instanceof Error
+        ? `${cause.message} Reabrir agora poderia reenviar e-mails.`
+        : 'Não foi possível confirmar a situação no servidor.')
+      return
+    }
+
+    reconcileSendingContacts(contacts, serverContacts ?? []).forEach(({ id: contactId, updates }) => {
+      updateContact(id, contactId, updates)
     })
+
+    const byId = new Map((serverContacts ?? []).map((row) => [row.id, row.status]))
+    const latest = useRosStore.getState().contactsByCampaign[id] ?? []
+    latest.forEach((contact) => {
+      // `sent` é terminal e `sending` sem resposta continua bloqueado.
+      if (contact.status === 'sent' || contact.status === 'sending') return
+      if (byId.get(contact.id) === 'sent' || byId.get(contact.id) === 'sending') return
+      // Volta para `ready`, não `pending`: `pending` mandaria a revisão gerar de
+      // novo por cima do texto que o recrutador editou.
+      const hasContent = (contact.editedSubject || contact.generatedSubject).trim()
+        && (contact.editedBody || contact.generatedBody).trim()
+      updateContact(id, contact.id, {
+        status: hasContent ? 'ready' : 'pending',
+        errorMessage: undefined,
+      })
+    })
+
     setActiveCampaign(id)
     router.push('/ros/review')
   }
@@ -143,7 +176,7 @@ export default function RosCampaignsPage() {
                 </div>
 
                 <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => reopen(row.id)}
+                  <button type="button" onClick={() => void reopen(row.id)}
                     className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-brand-muted transition-colors hover:text-brand-coral">
                     Reabrir
                     <ChevronRight className="h-3.5 w-3.5" />

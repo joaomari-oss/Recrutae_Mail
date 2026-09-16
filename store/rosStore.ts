@@ -11,6 +11,7 @@ interface RosStore {
   updateCampaign: (id: string, updates: Partial<RosCampaign>) => void
   setActiveCampaign: (id: string | null) => void
   updateContact: (campaignId: string, contactId: string, updates: Partial<RosContact>) => void
+  removeContact: (campaignId: string, contactId: string) => void
   approveAll: (campaignId: string) => void
   deleteCampaign: (id: string) => void
   getActiveContacts: () => RosContact[]
@@ -47,6 +48,16 @@ export const useRosStore = create<RosStore>()(persist((set) => ({
     const sentCount = updated.filter((c) => c.status === 'sent').length
     const failedCount = updated.filter((c) => c.status === 'failed').length
     return { contactsByCampaign: { ...state.contactsByCampaign, [campaignId]: updated }, campaigns: state.campaigns.map((c) => c.id === campaignId ? { ...c, approvedCount, sentCount, failedCount } : c) }
+  }),
+  removeContact: (campaignId, contactId) => set((state) => {
+    const contacts = state.contactsByCampaign[campaignId] ?? []
+    // Quem já recebeu permanece no histórico: remover apagaria a prova do envio.
+    if (contacts.find((c) => c.id === contactId)?.status === 'sent') return {}
+    const updated = contacts.filter((c) => c.id !== contactId)
+    return {
+      contactsByCampaign: { ...state.contactsByCampaign, [campaignId]: updated },
+      campaigns: state.campaigns.map((c) => c.id === campaignId ? { ...c, totalContacts: updated.length } : c),
+    }
   }),
   approveAll: (campaignId) => set((state) => {
     const contacts = state.contactsByCampaign[campaignId] ?? []

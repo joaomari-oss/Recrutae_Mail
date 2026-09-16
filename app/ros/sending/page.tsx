@@ -42,7 +42,12 @@ export default function RosSendingPage() {
   const [progress, setProgress] = useState({ done: 0, total: 0 })
 
   const aborted = useRef(false)
-  useEffect(() => () => { aborted.current = true }, [])
+  useEffect(() => {
+    // O StrictMode simula uma desmontagem e reusa o mesmo ref: sem reiniciar
+    // aqui, tudo abaixo continuaria cancelado durante o desenvolvimento.
+    aborted.current = false
+    return () => { aborted.current = true }
+  }, [])
 
   useEffect(() => {
     fetch('/api/ros/preflight')

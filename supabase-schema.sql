@@ -195,17 +195,31 @@ create trigger client_campaigns_updated_at
 alter table client_campaigns enable row level security;
 alter table client_contacts  enable row level security;
 
+-- As linhas ROS ficam fora do alcance da chave publica: elas guardam
+-- destinatario e corpo de e-mail de divulgacao. O service_role ignora RLS.
 drop policy if exists "recrutae_all_campaigns" on client_campaigns;
 create policy "recrutae_all_campaigns"
   on client_campaigns for all
   to anon, authenticated
-  using (true) with check (true);
+  using (campaign_kind is distinct from 'ros')
+  with check (campaign_kind is distinct from 'ros');
 
 drop policy if exists "recrutae_all_contacts" on client_contacts;
 create policy "recrutae_all_contacts"
   on client_contacts for all
   to anon, authenticated
-  using (true) with check (true);
+  using (
+    not exists (
+      select 1 from client_campaigns c
+      where c.id = client_contacts.campaign_id and c.campaign_kind = 'ros'
+    )
+  )
+  with check (
+    not exists (
+      select 1 from client_campaigns c
+      where c.id = client_contacts.campaign_id and c.campaign_kind = 'ros'
+    )
+  );
 
 -- ------------------------------------------------------------
 -- Índices para performance

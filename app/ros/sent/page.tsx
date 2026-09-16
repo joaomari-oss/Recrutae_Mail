@@ -42,7 +42,10 @@ export default function RosSentPage() {
     }
   }, [contacts])
 
-  const retryable = getRosSendQueue(contacts).length
+  // Só o que falhou de verdade: aprovados nunca enviados e suprimidos não são
+  // "reenvio", e contá-los prometeria algo que o botão não entrega.
+  const retryable = getRosSendQueue(contacts)
+    .filter((contact) => contact.status === 'failed' && contact.errorMessage !== SUPPRESSED_MESSAGE).length
 
   const exportResults = () => {
     exportToCSV(contacts.map((contact) => ({

@@ -83,3 +83,42 @@ create index if not exists idx_client_contacts_campaign_email on client_contacts
 alter table email_events add column if not exists delivery_id text;
 create unique index if not exists email_events_delivery_id_unique
   on email_events(delivery_id) where delivery_id is not null;
+
+-- ------------------------------------------------------------
+-- Isolamento das linhas ROS da chave publica.
+--
+-- `client_campaigns` e `client_contacts` sao compartilhadas com Candidatos e
+-- Clientes, cujas telas leem direto do navegador com a chave anon. As politicas
+-- antigas liberavam a tabela inteira, entao qualquer pessoa com o bundle lia o
+-- destinatario e o corpo dos e-mails de divulgacao.
+--
+-- As politicas abaixo preservam exatamente o acesso de Clientes/Candidatos e
+-- tiram as linhas ROS do alcance publico. O service_role ignora RLS, entao as
+-- rotas de servidor do ROS continuam funcionando.
+-- ------------------------------------------------------------
+alter table client_campaigns enable row level security;
+alter table client_contacts  enable row level security;
+
+drop policy if exists "recrutae_all_campaigns" on client_campaigns;
+create policy "recrutae_all_campaigns"
+  on client_campaigns for all
+  to anon, authenticated
+  using (campaign_kind is distinct from 'ros')
+  with check (campaign_kind is distinct from 'ros');
+
+drop policy if exists "recrutae_all_contacts" on client_contacts;
+create policy "recrutae_all_contacts"
+  on client_contacts for all
+  to anon, authenticated
+  using (
+    not exists (
+      select 1 from client_campaigns c
+      where c.id = client_contacts.campaign_id and c.campaign_kind = 'ros'
+    )
+  )
+  with check (
+    not exists (
+      select 1 from client_campaigns c
+      where c.id = client_contacts.campaign_id and c.campaign_kind = 'ros'
+    )
+  );

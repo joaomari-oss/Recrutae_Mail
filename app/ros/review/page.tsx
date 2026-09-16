@@ -29,6 +29,7 @@ export default function RosReviewPage() {
   const contactsByCampaign = useRosStore((state) => state.contactsByCampaign)
   const campaignConfigById = useRosStore((state) => state.campaignConfigById)
   const updateContact = useRosStore((state) => state.updateContact)
+  const removeContact = useRosStore((state) => state.removeContact)
 
   const contacts: RosContact[] = useMemo(
     () => (activeCampaignId ? contactsByCampaign[activeCampaignId] ?? [] : []),
@@ -48,13 +49,29 @@ export default function RosReviewPage() {
   // Uma geração por vez, cancelável no unmount — o mesmo padrão de Clientes.
   const running = useRef(false)
   const aborted = useRef(false)
-  useEffect(() => () => { aborted.current = true }, [])
+  useEffect(() => {
+    // O StrictMode simula uma desmontagem e reusa o mesmo ref: sem reiniciar
+    // aqui, tudo abaixo continuaria cancelado durante o desenvolvimento.
+    aborted.current = false
+    return () => { aborted.current = true }
+  }, [])
 
   const selected = contacts.find((contact) => contact.id === selectedId) ?? contacts[0] ?? null
 
   useEffect(() => {
     if (!selectedId && contacts.length) setSelectedId(contacts[0].id)
   }, [contacts, selectedId])
+
+  // Sair da tela no meio de uma geração deixaria o contato preso em
+  // `generating`, fora da fila e bloqueando o envio para sempre.
+  useEffect(() => {
+    if (!activeCampaignId) return
+    const stranded = (useRosStore.getState().contactsByCampaign[activeCampaignId] ?? [])
+      .filter((contact) => contact.status === 'generating')
+    stranded.forEach((contact) => updateContact(activeCampaignId, contact.id, { status: 'pending' }))
+    // Uma vez, na montagem: depois disso `generating` significa geração em curso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCampaignId])
 
   const generateFor = useCallback(async (contact: RosContact) => {
     if (!activeCampaignId || !config) return
@@ -144,6 +161,15 @@ export default function RosReviewPage() {
       }
     })
     if (!approved) toast.error('Nenhum e-mail pronto para aprovar em lote.')
+  }
+
+  const discard = (id: string) => {
+    if (!activeCampaignId) return
+    const index = contacts.findIndex((contact) => contact.id === id)
+    const next = contacts[index + 1] ?? contacts[index - 1] ?? null
+    // Tira da campanha desta aba: o contato nunca é reivindicado nem enviado.
+    removeContact(activeCampaignId, id)
+    setSelectedId(next ? next.id : null)
   }
 
   const skip = () => {
@@ -254,6 +280,7 @@ export default function RosReviewPage() {
                 }
               }}
               onSkip={skip}
+              onDiscard={discard}
             />
           ) : (
             <p className="text-sm text-brand-muted">Nenhum contato nesta campanha.</p>

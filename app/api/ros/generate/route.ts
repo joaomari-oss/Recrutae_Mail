@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { personalizeRosEmail } from '@/lib/ros/generate'
 import type { GenerateRosEmailRequest } from '@/lib/rosTypes'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { supabase } from '@/lib/supabase'
 import { persistRosGeneratedEmail } from '@/lib/outreach/repository'
 
-const db = supabaseAdmin ?? supabase
+// A persistencia do texto gerado tambem passa pelo service_role.
+const db = supabaseAdmin
 
 export async function POST(request: NextRequest) {
   let payload: GenerateRosEmailRequest
