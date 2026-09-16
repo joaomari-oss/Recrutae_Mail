@@ -113,11 +113,25 @@ describe('persistência ROS', () => {
 
   it('permite a progressão persistida de campanha de draft para ready', async () => {
     const { db, requests } = database([
-      { id: 'camp-1', campaign_kind: 'ros', status: 'draft' }, [], [], [],
+      { id: 'camp-1', campaign_kind: 'ros', status: 'draft' }, [], [{ id: 'camp-1' }], [],
     ])
     await saveRosCampaign(db, { ...campaign, status: 'ready' }, config, [contact])
     const update = requests.find(r => r.method === 'PATCH' && r.url.pathname.endsWith('client_campaigns'))!
     expect(update.body.status).toBe('ready')
+  })
+
+  it('não permite que leitura stale em draft sobrescreva sending com ready', async () => {
+    const { db, requests } = database([
+      // The initial lookup sees draft, but another writer advances it before our PATCH.
+      { id: 'camp-1', campaign_kind: 'ros', status: 'draft' }, [], [], [], [],
+    ])
+    await saveRosCampaign(db, { ...campaign, status: 'ready' }, config, [contact])
+    const updates = requests.filter(r => r.method === 'PATCH' && r.url.pathname.endsWith('client_campaigns'))
+    expect(updates).toHaveLength(2)
+    expect(updates[0].body.status).toBe('ready')
+    expect(updates[0].url.searchParams.get('status')).toBe('in.(draft,generating,ready)')
+    expect(updates[1].body.status).toBeUndefined()
+    expect(updates[1].url.searchParams.get('status')).toBeNull()
   })
 
   it('não regride campanha sending ou completed para draft em salvamento antigo', async () => {

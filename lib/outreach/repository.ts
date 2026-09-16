@@ -20,6 +20,11 @@ function canPersistCampaignStatus(current: unknown, next: RosCampaign['status'])
   return campaignStatusRank[next] >= campaignStatusRank[current as RosCampaign['status']]
 }
 
+function statusesNotAheadOf(next: RosCampaign['status']): RosCampaign['status'][] {
+  return (Object.keys(campaignStatusRank) as RosCampaign['status'][])
+    .filter(status => campaignStatusRank[status] <= campaignStatusRank[next])
+}
+
 export class OutreachError extends Error {
   constructor(message: string, public readonly status = 500) { super(message) }
 }
@@ -84,10 +89,29 @@ export async function saveRosCampaign(db: SupabaseClient, campaign: CampaignInpu
 
   const row = mapRosCampaignRow({ ...campaign, totalContacts: contacts.length }, config)
   if (existing.data) {
-    if (!canPersistCampaignStatus(existing.data.status, campaign.status)) delete row.status
-    const { error } = await db.from('client_campaigns').update(row)
-      .eq('id', campaign.id).eq('campaign_kind', 'ros')
-    check(error)
+    if (canPersistCampaignStatus(existing.data.status, campaign.status)) {
+      // The status predicate is the concurrency guard. Even if the SELECT
+      // above observed draft, this update cannot overwrite a later state.
+      const { data, error } = await db.from('client_campaigns').update(row)
+        .eq('id', campaign.id).eq('campaign_kind', 'ros')
+        .in('status', statusesNotAheadOf(campaign.status)).select('id')
+      check(error)
+      if (data?.length !== 1) {
+        // A concurrent writer advanced status. Preserve non-status edits while
+        // intentionally leaving the terminal/in-progress state untouched.
+        const staleRow = { ...row }
+        delete staleRow.status
+        const { error: staleError } = await db.from('client_campaigns').update(staleRow)
+          .eq('id', campaign.id).eq('campaign_kind', 'ros')
+        check(staleError)
+      }
+    } else {
+      const staleRow = { ...row }
+      delete staleRow.status
+      const { error } = await db.from('client_campaigns').update(staleRow)
+        .eq('id', campaign.id).eq('campaign_kind', 'ros')
+      check(error)
+    }
   } else {
     // Insert intentionally rejects concurrent ID conflicts instead of overwriting their kind.
     const { error } = await db.from('client_campaigns').insert(row)
