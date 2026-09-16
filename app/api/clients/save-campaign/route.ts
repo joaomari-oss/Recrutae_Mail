@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { supabase } from '@/lib/supabase'
 import { SaveCampaignRequest, SaveCampaignResponse } from '@/lib/clientTypes'
+import { mapClientCampaignRow } from '@/lib/outreach/repository'
 
 // Use admin client when available (bypasses RLS), fallback to anon
 const db = supabaseAdmin ?? supabase
@@ -29,18 +30,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<SaveCampa
 
   // Upsert campaign (safe to call more than once)
   const { error: campErr } = await db.from('client_campaigns').upsert(
-    {
-      id: campaign.id,
-      name: campaign.name,
-      recruiter_name: config.recruiterName ?? '',
-      recruiter_email: config.recruiterEmail ?? '',
-      segment: config.segment ?? '',
-      key_points: config.emailTemplate || null,
-      status: campaign.status,
-      contact_count: contacts.length,
-      sent_count: 0,
-      failed_count: 0,
-    },
+    mapClientCampaignRow(
+      { id: campaign.id, name: campaign.name, status: campaign.status, totalContacts: contacts.length },
+      config,
+    ),
     { onConflict: 'id' }
   )
 

@@ -211,7 +211,9 @@ export async function GET() {
   const { error: sendAttemptsErr } = usingAdmin
     ? await db.from('ros_send_attempts').select('campaign_id, contact_id, payload, idempotency_key').limit(0)
     : { error: null }
-  const { error: eventsErr } = await db.from('email_events').select('contact_id, campaign_id, event_type, received_at').limit(0)
+  // `delivery_id` sustenta a idempotencia do webhook: sem ele o diagnostico
+  // aprovaria um banco que ainda aceita evento duplicado.
+  const { error: eventsErr } = await db.from('email_events').select('contact_id, campaign_id, event_type, received_at, delivery_id').limit(0)
 
   if (campErr || contErr || suppressionErr || sendAttemptsErr || eventsErr) {
     const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')

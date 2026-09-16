@@ -393,3 +393,37 @@ export async function deleteRosCampaign(db: SupabaseClient, campaignId: string) 
     .eq('id', campaignId).eq('campaign_kind', 'ros')
   check(error)
 }
+
+/** Clientes e ROS dividem a tabela; toda leitura de Clientes passa por aqui. */
+export const clientCampaignKindFilter = { column: 'campaign_kind', value: 'clients' } as const
+
+export type ClientCampaignConfigInput = {
+  recruiterName?: string
+  recruiterEmail?: string
+  segment?: string
+  emailTemplate?: string
+}
+
+/**
+ * Linha de campanha de Clientes com o discriminador explicito. Linhas antigas
+ * ja chegam como `clients` pelo default da migracao, entao o filtro por tipo
+ * nao esconde historico.
+ */
+export function mapClientCampaignRow(
+  campaign: { id: string; name: string; status: string; totalContacts: number },
+  config: ClientCampaignConfigInput,
+): Record<string, unknown> {
+  return {
+    id: campaign.id,
+    name: campaign.name,
+    campaign_kind: 'clients',
+    recruiter_name: config.recruiterName ?? '',
+    recruiter_email: config.recruiterEmail ?? '',
+    segment: config.segment ?? '',
+    key_points: config.emailTemplate || null,
+    status: campaign.status,
+    contact_count: campaign.totalContacts,
+    sent_count: 0,
+    failed_count: 0,
+  }
+}

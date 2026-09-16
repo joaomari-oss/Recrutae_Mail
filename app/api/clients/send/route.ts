@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { supabase } from '@/lib/supabase'
 import { getLogoUrl } from '@/lib/getLogoUrl'
 import { renderOutreachEmail } from '@/lib/outreach/emailHtml'
+import { isEmailSuppressed } from '@/lib/outreach/repository'
 
 const db = supabaseAdmin ?? supabase
 
@@ -43,6 +44,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
       }
     }
 
+    // Supressão é global: quem se descadastrou de uma divulgação ROS também
+    // não pode receber prospecção de Clientes.
+    if (db) {
+      try {
+        if (await isEmailSuppressed(db, to)) {
+          return NextResponse.json(
+            { success: false, error: 'Endereço descadastrado ou suprimido — não recebeu o e-mail.' },
+            { status: 409 },
+          )
+        }
+      } catch (suppressionError) {
+        console.error('[clients/send] suppression check failed:', suppressionError)
+        return NextResponse.json(
+          { success: false, error: 'Não foi possível verificar a supressão. Envio bloqueado por segurança.' },
+          { status: 503 },
+        )
+      }
+    }
+
     const safeName = sanitizeName(recruiterName || 'Recrutaê')
     const safeRole = (recruiterRole || '').replace(/[<>"']/g, '').trim().slice(0, 100)
     const fromAddress = `${safeName} <${recruiterEmail}>`
@@ -58,13 +78,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
       logoUrl: getLogoUrl(),
     })
 
+    // Mesmo espaço de nomes do ROS, com prefixo próprio: um reenvio dentro da
+    // janela de retenção do Resend não vira e-mail duplicado.
+    const idempotencyKey = campaignId && contactId ? `clients/${campaignId}/${contactId}` : undefined
+
     const result = await resend.emails.send({
       from: fromAddress,
       to: [to],
       subject,
       html: renderedEmail.html,
       text: renderedEmail.text,
-      reply_to: effectiveReplyTo,
+      // O SDK 4 renomeou o campo; `reply_to` era ignorado em silêncio e as
+      // respostas voltavam para o remetente errado.
+      replyTo: effectiveReplyTo,
       tags: [
         ...(campaignId ? [{ name: 'campaign_id', value: campaignId }] : []),
         ...(contactId ? [{ name: 'contact_id', value: contactId }] : []),
@@ -72,9 +98,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
       headers: {
         'List-Unsubscribe': `<mailto:${effectiveReplyTo}?subject=unsubscribe>`,
         'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        'X-Entity-Ref-ID': `${campaignId ?? 'client'}-${contactEmail ?? ''}-${Date.now()}`,
+        'X-Entity-Ref-ID': idempotencyKey ?? `${campaignId ?? 'client'}-${contactEmail ?? ''}`,
       },
-    })
+    }, idempotencyKey ? { idempotencyKey } : undefined)
 
     if (result.error) {
       console.error('[clients/send] Resend error:', result.error)

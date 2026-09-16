@@ -269,3 +269,32 @@ describe('persistência ROS', () => {
     await expect(isEmailSuppressed(database([{ failure: 'offline' }]).db, 'a@b.com')).rejects.toThrow('offline')
   })
 })
+
+describe('isolamento de Clientes', () => {
+  it('mapeia campanhas de Clientes com o discriminador explícito', async () => {
+    const { mapClientCampaignRow } = await import('@/lib/outreach/repository')
+    const config = {
+      recruiterName: 'Ana', recruiterEmail: 'ana@recrutae.com.br', segment: 'Tecnologia',
+      emailTemplate: 'Corpo',
+    }
+
+    expect(mapClientCampaignRow(
+      { id: 'c1', name: 'Clientes', status: 'draft', totalContacts: 4 },
+      config,
+    )).toMatchObject({
+      id: 'c1', campaign_kind: 'clients', name: 'Clientes',
+      recruiter_email: 'ana@recrutae.com.br', segment: 'Tecnologia', contact_count: 4,
+    })
+  })
+
+  it('a consulta de Clientes exclui campanhas ROS', async () => {
+    const { clientCampaignKindFilter } = await import('@/lib/outreach/repository')
+    expect(clientCampaignKindFilter).toEqual({ column: 'campaign_kind', value: 'clients' })
+  })
+
+  it('campanha sem configuração não perde o discriminador', async () => {
+    const { mapClientCampaignRow } = await import('@/lib/outreach/repository')
+    expect(mapClientCampaignRow({ id: 'c2', name: 'Antiga', status: 'completed', totalContacts: 0 }, {}))
+      .toMatchObject({ campaign_kind: 'clients', recruiter_name: '', segment: '', key_points: null })
+  })
+})

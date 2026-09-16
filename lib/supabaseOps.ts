@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { clientCampaignKindFilter } from './outreach/repository'
 import { ClientContact, ClientCampaign, ClientCampaignConfig } from './clientTypes'
 import { Candidate, Campaign, CampaignConfig, CampaignStatus, CandidateStatus } from './types'
 
@@ -94,6 +95,8 @@ export async function loadCampaignsFromSupabase(): Promise<DbCampaignRow[]> {
   const { data, error } = await supabase
     .from('client_campaigns')
     .select('*')
+    // Campanhas ROS vivem na mesma tabela e nao pertencem ao historico de Clientes.
+    .eq(clientCampaignKindFilter.column, clientCampaignKindFilter.value)
     .order('created_at', { ascending: false })
   if (error) {
     console.error('[supabase] loadCampaigns:', error.message)

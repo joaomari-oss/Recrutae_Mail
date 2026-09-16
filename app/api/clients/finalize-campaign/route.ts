@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { supabase } from '@/lib/supabase'
+import { clientCampaignKindFilter } from '@/lib/outreach/repository'
 
 const db = supabaseAdmin ?? supabase
 
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     status: 'completed',
     sent_count: sentCount,
     failed_count: failedCount,
-  }).eq('id', campaignId)
+  }).eq('id', campaignId).eq(clientCampaignKindFilter.column, clientCampaignKindFilter.value)
 
   if (error) {
     console.error('[finalize-campaign] error:', error.message)
