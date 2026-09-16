@@ -39,3 +39,9 @@ alter table email_suppressions enable row level security;
 create index if not exists idx_client_campaigns_kind_created on client_campaigns(campaign_kind, created_at desc);
 -- Not unique: preserve existing data; import/send flows handle duplicate contacts.
 create index if not exists idx_client_contacts_campaign_email on client_contacts(campaign_id, lower(email));
+
+-- Resend/Svix assigns one identifier per delivery. Existing historic rows keep
+-- NULL and remain valid; new webhook deliveries are atomically idempotent.
+alter table email_events add column if not exists delivery_id text;
+create unique index if not exists email_events_delivery_id_unique
+  on email_events(delivery_id) where delivery_id is not null;

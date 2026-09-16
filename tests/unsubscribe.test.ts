@@ -1,15 +1,17 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { SignJWT } from 'jose'
 import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/outreach/unsubscribe'
 
 const database = vi.hoisted(() => {
   const suppressions = new Map<string, Record<string, unknown>>()
   const events: Record<string, unknown>[] = []
 
-  return {
+  const state = {
     suppressions,
     events,
+    failNextEventInsert: false,
     from(table: string) {
       if (table === 'email_suppressions') {
         return {
@@ -37,6 +39,13 @@ const database = vi.hoisted(() => {
             return query
           },
           async insert(row: Record<string, unknown>) {
+            if (state.failNextEventInsert) {
+              state.failNextEventInsert = false
+              return { error: { message: 'falha transitória de banco' } }
+            }
+            if (row.delivery_id && events.some((event) => event.delivery_id === row.delivery_id)) {
+              return { error: { code: '23505', message: 'duplicate delivery id' } }
+            }
             events.push(row)
             return { error: null }
           },
@@ -46,6 +55,8 @@ const database = vi.hoisted(() => {
       throw new Error(`Tabela inesperada: ${table}`)
     },
   }
+
+  return state
 })
 
 vi.mock('@/lib/supabaseAdmin', () => ({ supabaseAdmin: database }))
@@ -79,6 +90,41 @@ describe('unsubscribe token', () => {
     await expect(createUnsubscribeToken({ email: 'ana@example.com', campaignId: 'camp-1' }, 'curto'))
       .rejects.toThrow('pelo menos 32')
   })
+
+  it('rejeita token expirado mesmo com assinatura e finalidade válidas', async () => {
+    const token = await new SignJWT({ email: 'ana@example.com', campaignId: 'camp-1', purpose: 'unsubscribe' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuer('recrutae-mail')
+      .setAudience('unsubscribe')
+      .setIssuedAt()
+      .setExpirationTime(Math.floor(Date.now() / 1000) - 1)
+      .sign(new TextEncoder().encode(secret))
+
+    await expect(verifyUnsubscribeToken(token, secret)).rejects.toThrow()
+  })
+
+  it('rejeita token assinado com finalidade diferente', async () => {
+    const token = await new SignJWT({ email: 'ana@example.com', campaignId: 'camp-1', purpose: 'preview' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuer('recrutae-mail')
+      .setAudience('unsubscribe')
+      .setIssuedAt()
+      .setExpirationTime('180d')
+      .sign(new TextEncoder().encode(secret))
+
+    await expect(verifyUnsubscribeToken(token, secret)).rejects.toThrow('inválido')
+  })
+
+  it('rejeita token assinado sem expiração', async () => {
+    const token = await new SignJWT({ email: 'ana@example.com', campaignId: 'camp-1', purpose: 'unsubscribe' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuer('recrutae-mail')
+      .setAudience('unsubscribe')
+      .setIssuedAt()
+      .sign(new TextEncoder().encode(secret))
+
+    await expect(verifyUnsubscribeToken(token, secret)).rejects.toThrow('inválido')
+  })
 })
 
 describe('public unsubscribe endpoint', () => {
@@ -87,6 +133,7 @@ describe('public unsubscribe endpoint', () => {
   beforeEach(() => {
     database.suppressions.clear()
     database.events.length = 0
+    database.failNextEventInsert = false
     process.env.UNSUBSCRIBE_SIGNING_SECRET = secret
     process.env.RESEND_WEBHOOK_SECRET = 'webhook-secret-que-nao-vaza'
   })
@@ -117,12 +164,29 @@ describe('public unsubscribe endpoint', () => {
     expect(response.status).toBe(400)
     expect(database.suppressions.size).toBe(0)
   })
+
+  it('redireciona a confirmação humana para o estado de sucesso sem afetar o one-click', async () => {
+    const token = await createUnsubscribeToken({ email: 'ana@example.com', campaignId: 'camp-1' }, secret)
+    const response = await unsubscribePost(new NextRequest(
+      `https://mail.recrutae.com.br/api/unsubscribe?token=${encodeURIComponent(token)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'human_confirmation=1',
+      },
+    ))
+
+    expect(response.status).toBe(303)
+    expect(response.headers.get('location')).toContain('/unsubscribe?')
+    expect(response.headers.get('location')).toContain('status=success')
+  })
 })
 
 describe('Resend webhook', () => {
   beforeEach(() => {
     database.suppressions.clear()
     database.events.length = 0
+    database.failNextEventInsert = false
     process.env.UNSUBSCRIBE_SIGNING_SECRET = '12345678901234567890123456789012'
     process.env.RESEND_WEBHOOK_SECRET = 'webhook-secret-que-nao-vaza'
   })
@@ -154,6 +218,7 @@ describe('Resend webhook', () => {
       'https://mail.recrutae.com.br/api/webhooks/resend?secret=webhook-secret-que-nao-vaza',
       {
         method: 'POST',
+        headers: { 'svix-id': 'delivery-bounce-1' },
         body: JSON.stringify({
           type: 'email.bounced',
           data: { email_id: 'msg-1', to: ['ANA@EXAMPLE.COM'], tags: { campaign_id: 'camp-1', contact_id: 'contact-1' } },
@@ -166,12 +231,12 @@ describe('Resend webhook', () => {
       reason: 'bounce', source: 'resend_webhook', message_id: 'msg-1',
     })
     expect(database.events).toEqual([{
-      message_id: 'msg-1', campaign_id: 'camp-1', contact_id: 'contact-1',
+      message_id: 'msg-1', delivery_id: 'delivery-bounce-1', campaign_id: 'camp-1', contact_id: 'contact-1',
       recipient_email: 'ana@example.com', event_type: 'bounced',
     }])
   })
 
-  it('aceita reentrega de bounce sem duplicar o evento rastreado', async () => {
+  it('aceita reentrega com o mesmo identificador de entrega sem duplicar o evento', async () => {
     const url = 'https://mail.recrutae.com.br/api/webhooks/resend?secret=webhook-secret-que-nao-vaza'
     const init = {
       method: 'POST',
@@ -181,11 +246,47 @@ describe('Resend webhook', () => {
       }),
     }
 
-    const first = await webhookPost(new NextRequest(url, init))
-    const replay = await webhookPost(new NextRequest(url, init))
+    const first = await webhookPost(new NextRequest(url, { ...init, headers: { 'svix-id': 'delivery-1' } }))
+    const replay = await webhookPost(new NextRequest(url, { ...init, headers: { 'svix-id': 'delivery-1' } }))
 
     expect(first.status).toBe(200)
     expect(replay.status).toBe(200)
     expect(database.events).toHaveLength(1)
+    expect(database.events[0]).toMatchObject({ delivery_id: 'delivery-1' })
+  })
+
+  it('preserva duas aberturas legítimas do mesmo e-mail com entregas distintas', async () => {
+    const url = 'https://mail.recrutae.com.br/api/webhooks/resend?secret=webhook-secret-que-nao-vaza'
+    const body = JSON.stringify({
+      type: 'email.opened',
+      data: { email_id: 'msg-aberta', to: ['ana@example.com'] },
+    })
+
+    const first = await webhookPost(new NextRequest(url, { method: 'POST', headers: { 'svix-id': 'delivery-open-1' }, body }))
+    const second = await webhookPost(new NextRequest(url, { method: 'POST', headers: { 'svix-id': 'delivery-open-2' }, body }))
+
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect(database.events).toEqual([
+      expect.objectContaining({ delivery_id: 'delivery-open-1', event_type: 'opened' }),
+      expect.objectContaining({ delivery_id: 'delivery-open-2', event_type: 'opened' }),
+    ])
+  })
+
+  it('retorna falha recuperável quando gravar evento falha e permite a tentativa posterior', async () => {
+    const url = 'https://mail.recrutae.com.br/api/webhooks/resend?secret=webhook-secret-que-nao-vaza'
+    const init = {
+      method: 'POST',
+      headers: { 'svix-id': 'delivery-retry' },
+      body: JSON.stringify({ type: 'email.delivered', data: { email_id: 'msg-retry', to: ['ana@example.com'] } }),
+    }
+    database.failNextEventInsert = true
+
+    const failed = await webhookPost(new NextRequest(url, init))
+    const retried = await webhookPost(new NextRequest(url, init))
+
+    expect(failed.status).toBe(503)
+    expect(retried.status).toBe(200)
+    expect(database.events).toEqual([expect.objectContaining({ delivery_id: 'delivery-retry' })])
   })
 })

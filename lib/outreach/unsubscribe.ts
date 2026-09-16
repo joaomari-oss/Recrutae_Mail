@@ -56,7 +56,18 @@ export async function verifyUnsubscribeToken(token: string, secret: string): Pro
     audience: AUDIENCE,
   })
 
-  if (payload.purpose !== 'unsubscribe' || typeof payload.email !== 'string' || typeof payload.campaignId !== 'string') {
+  const audienceMatches = typeof payload.aud === 'string'
+    ? payload.aud === AUDIENCE
+    : Array.isArray(payload.aud) && payload.aud.includes(AUDIENCE)
+
+  if (
+    payload.iss !== ISSUER ||
+    !audienceMatches ||
+    typeof payload.exp !== 'number' ||
+    payload.purpose !== 'unsubscribe' ||
+    typeof payload.email !== 'string' ||
+    typeof payload.campaignId !== 'string'
+  ) {
     throw new Error('Token de descadastro inválido.')
   }
 

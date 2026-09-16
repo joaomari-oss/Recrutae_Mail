@@ -14,22 +14,55 @@ function response(body: Record<string, unknown>, status: number) {
   })
 }
 
+function humanResult(req: NextRequest, token: string | null, status: 'success' | 'error') {
+  const url = new URL('/unsubscribe', req.url)
+  if (token) url.searchParams.set('token', token)
+  url.searchParams.set('status', status)
+  const redirect = NextResponse.redirect(url, 303)
+  redirect.headers.set('Cache-Control', 'no-store')
+  return redirect
+}
+
+async function isHumanConfirmation(req: NextRequest): Promise<boolean> {
+  if (!req.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded')) return false
+  try {
+    return (await req.formData()).get('human_confirmation') === '1'
+  } catch {
+    return false
+  }
+}
+
 /** RFC 8058 one-click endpoint. The public confirmation page issues this POST after a human click. */
 export async function POST(req: NextRequest) {
+  const humanConfirmation = await isHumanConfirmation(req)
   const secret = unsubscribeSecret()
-  if (!secret) return response({ error: 'Serviço de descadastro indisponível.' }, 503)
+  if (!secret) {
+    return humanConfirmation
+      ? humanResult(req, req.nextUrl.searchParams.get('token'), 'error')
+      : response({ error: 'Serviço de descadastro indisponível.' }, 503)
+  }
 
   const token = req.nextUrl.searchParams.get('token')
-  if (!token) return response({ error: 'Token de descadastro inválido.' }, 400)
+  if (!token) {
+    return humanConfirmation
+      ? humanResult(req, null, 'error')
+      : response({ error: 'Token de descadastro inválido.' }, 400)
+  }
 
   let claims
   try {
     claims = await verifyUnsubscribeToken(token, secret)
   } catch {
-    return response({ error: 'Token de descadastro inválido ou expirado.' }, 400)
+    return humanConfirmation
+      ? humanResult(req, token, 'error')
+      : response({ error: 'Token de descadastro inválido ou expirado.' }, 400)
   }
 
-  if (!supabaseAdmin) return response({ error: 'Serviço de descadastro indisponível.' }, 503)
+  if (!supabaseAdmin) {
+    return humanConfirmation
+      ? humanResult(req, token, 'error')
+      : response({ error: 'Serviço de descadastro indisponível.' }, 503)
+  }
 
   const { error } = await supabaseAdmin.from('email_suppressions').upsert({
     email: normalizeSuppressionEmail(claims.email),
@@ -40,8 +73,11 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('[unsubscribe] Failed to persist suppression:', error.message)
-    return response({ error: 'Não foi possível concluir o descadastro.' }, 503)
+    return humanConfirmation
+      ? humanResult(req, token, 'error')
+      : response({ error: 'Não foi possível concluir o descadastro.' }, 503)
   }
 
+  if (humanConfirmation) return humanResult(req, token, 'success')
   return response({ ok: true, email: claims.email }, 200)
 }

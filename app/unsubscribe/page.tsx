@@ -2,7 +2,7 @@ import Image from 'next/image'
 import { verifyUnsubscribeToken } from '@/lib/outreach/unsubscribe'
 
 type UnsubscribePageProps = {
-  searchParams: { token?: string }
+  searchParams: { token?: string; status?: string }
 }
 
 function validSecret(): string | null {
@@ -12,6 +12,7 @@ function validSecret(): string | null {
 
 export default async function UnsubscribePage({ searchParams }: UnsubscribePageProps) {
   const token = searchParams.token
+  const status = searchParams.status
   const secret = validSecret()
   let email: string | null = null
 
@@ -30,15 +31,25 @@ export default async function UnsubscribePage({ searchParams }: UnsubscribePageP
           <Image src="/brand/recrutae-ros.png" alt="Recrutaê OS" width={46} height={46} priority />
         </div>
 
-        {email ? (
+        {email && status === 'success' ? (
           <>
-            <h1 className="font-display text-3xl font-semibold">Confirmar descadastro</h1>
+            <h1 className="font-display text-3xl font-semibold">Descadastro concluído</h1>
             <p className="mt-3 text-sm leading-6 text-[#F4F2ED]/70">
-              Você deixará de receber as divulgações do Recrutaê | OS em <strong className="font-medium text-[#F4F2ED]">{email}</strong>.
+              {email} não receberá novas divulgações do Recrutaê | OS.
+            </p>
+          </>
+        ) : email ? (
+          <>
+            <h1 className="font-display text-3xl font-semibold">{status === 'error' ? 'Não foi possível concluir' : 'Confirmar descadastro'}</h1>
+            <p className="mt-3 text-sm leading-6 text-[#F4F2ED]/70">
+              {status === 'error'
+                ? 'Houve uma falha temporária. Você pode tentar novamente abaixo.'
+                : <>Você deixará de receber as divulgações do Recrutaê | OS em <strong className="font-medium text-[#F4F2ED]">{email}</strong>.</>}
             </p>
             <form method="post" action={`/api/unsubscribe?token=${encodeURIComponent(token!)}`} className="mt-7">
+              <input type="hidden" name="human_confirmation" value="1" />
               <button type="submit" className="w-full rounded-lg bg-[#FBB900] px-4 py-3 text-sm font-semibold text-[#0B0A18] transition hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-[#FBB900] focus:ring-offset-2 focus:ring-offset-[#16152C]">
-                Confirmar descadastro
+                {status === 'error' ? 'Tentar novamente' : 'Confirmar descadastro'}
               </button>
             </form>
             <p className="mt-4 text-center text-xs text-[#F4F2ED]/45">Esta ação pode ser desfeita falando com a Recrutaê.</p>

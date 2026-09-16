@@ -134,9 +134,13 @@ create table if not exists email_events (
   contact_id text,
   recipient_email text,
   event_type text not null default 'opened',
+  delivery_id text,
   received_at timestamptz default now()
 );
 alter table email_events add column if not exists contact_id text;
+alter table email_events add column if not exists delivery_id text;
+create unique index if not exists email_events_delivery_id_unique
+  on email_events(delivery_id) where delivery_id is not null;
 `
 
 export async function GET() {

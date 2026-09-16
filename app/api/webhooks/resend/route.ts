@@ -49,8 +49,9 @@ function recipientFrom(to: unknown): string | null {
 }
 
 export async function POST(req: NextRequest) {
-  // The secret is deliberately mandatory: accepting an unsigned webhook would
-  // let third parties globally suppress addresses or forge engagement events.
+  // This deployment's shared webhook secret is mandatory. Delivery replay
+  // protection is enforced separately by the svix-id on this authenticated request and database
+  // uniqueness, rather than treating this request secret as a replay defense.
   const secret = req.nextUrl.searchParams.get('secret')
   const expectedSecret = process.env.RESEND_WEBHOOK_SECRET
   if (!expectedSecret) {
@@ -88,6 +89,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing email_id' }, { status: 400 })
   }
 
+  const deliveryId = req.headers.get('svix-id')?.trim() || null
+  if (!deliveryId) {
+    return NextResponse.json({ error: 'Missing delivery identifier' }, { status: 400 })
+  }
+
   if (!supabaseAdmin) {
     console.error('[webhook] supabaseAdmin not configured; returning retryable failure:', email_id)
     return NextResponse.json({ error: 'Webhook temporariamente indisponível.' }, { status: 503 })
@@ -111,20 +117,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Resend retries deliveries when a 2xx response is lost. Avoid counting a
-  // retried event twice while keeping the response successful and idempotent.
-  const { data: existingEvent, error: existingEventError } = await supabaseAdmin.from('email_events')
-    .select('id').eq('message_id', email_id).eq('event_type', eventType).maybeSingle()
-
-  if (existingEventError) {
-    console.error('[webhook] Failed to check existing email event:', existingEventError.message)
-    return NextResponse.json({ error: 'Event lookup failed' }, { status: 503 })
-  }
-
-  if (existingEvent) return NextResponse.json({ ok: true, replay: true })
-
   const { error } = await supabaseAdmin.from('email_events').insert({
     message_id:      email_id,
+    delivery_id:     deliveryId,
     campaign_id:     campaignId,
     contact_id:      contactId,
     recipient_email: recipientEmail,
@@ -132,8 +127,9 @@ export async function POST(req: NextRequest) {
   })
 
   if (error) {
+    if (error.code === '23505') return NextResponse.json({ ok: true, replay: true })
     console.error('[webhook] Failed to store email event:', error.message)
-    return NextResponse.json({ ok: false, error: error.message })
+    return NextResponse.json({ error: 'Event persistence failed' }, { status: 503 })
   }
 
   return NextResponse.json({ ok: true })
