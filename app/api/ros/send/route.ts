@@ -3,7 +3,8 @@ import { Resend } from 'resend'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import {
   claimRosContact,
-  getOrCreateRosSendPayload,
+  getOrCreateRosSendAttempt,
+  getRosContactEmail,
   isEmailSuppressed,
   markContactFailed,
   markContactSent,
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY)
   const result = await sendRosEmail({ ...body, recruiterEmail: fromEmail }, {
     isSuppressed: email => isEmailSuppressed(db, email),
+    getExpectedRecipient: (campaignId, contactId) => getRosContactEmail(db, campaignId, contactId),
     claimContact: (campaignId, contactId) => claimRosContact(db, campaignId, contactId),
     send: ({ reply_to, ...payload }, options) => resend.emails.send(
       { ...payload, replyTo: reply_to },
@@ -73,9 +75,15 @@ export async function POST(request: NextRequest) {
     ),
     markSent: (contactId, messageId) => markContactSent(db, contactId, messageId),
     markFailed: (contactId, message) => markContactFailed(db, contactId, message),
-    preparePayload: async (campaignId, contactId, payload) => {
-      const serialized = await getOrCreateRosSendPayload(db, campaignId, contactId, JSON.stringify(payload))
-      return JSON.parse(serialized)
+    preparePayload: async (campaignId, contactId, payload, idempotencyKey) => {
+      const attempt = await getOrCreateRosSendAttempt(
+        db,
+        campaignId,
+        contactId,
+        JSON.stringify(payload),
+        idempotencyKey,
+      )
+      return { payload: JSON.parse(attempt.payload), idempotencyKey: attempt.idempotencyKey }
     },
     createToken: input => createUnsubscribeToken(input, unsubscribeSecret),
     appBaseUrl,
@@ -85,6 +93,6 @@ export async function POST(request: NextRequest) {
   if (result.success) return NextResponse.json(result)
   const status = result.invalidRecipient ? 400
     : result.unavailable ? 503
-      : result.suppressed || result.claimed === false ? 409 : 502
+      : result.suppressed || result.claimed === false || result.recipientMismatch ? 409 : 502
   return NextResponse.json(result, { status })
 }

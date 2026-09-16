@@ -39,3 +39,14 @@
 - Migração aditiva `send_payload text` foi replicada em `supabase-migration-ros.sql`, `supabase-schema.sql` e no SQL de `/api/migrate`.
 - RED: 11 falhas reproduziram os quatro achados. GREEN focado: 3 arquivos, 44 testes aprovados. Suíte: 11 arquivos, 85 testes aprovados. Build: compilação e 39 páginas concluídas com exit code 0.
 - Teste de retry avança o relógio em 24 horas, força falha de `markSent` após sucesso do Resend e confirma igualdade byte-for-byte do JSON enviado e da chave idempotente nas duas tentativas.
+
+## Correção após revisão — rodada 2
+
+- O payload durável e sua chave idempotente saíram de `client_contacts` e agora ficam em `ros_send_attempts`, tabela dedicada com RLS habilitado, privilégios revogados de `public`, `anon` e `authenticated`, nenhuma policy pública e grant explícito apenas para `service_role`.
+- Os três SQLs (`supabase-schema.sql`, `supabase-migration-ros.sql` e `/api/migrate`) migram valores legados para a tabela privada antes de remover `client_contacts.send_payload`; o bloco condicional e `on conflict do nothing` tornam a reaplicação idempotente.
+- O repositório usa `on conflict do nothing` como compare-and-set: o primeiro payload vence, concorrentes releem os mesmos bytes e a mesma chave, e um contato `sending` só é retomado se houver tentativa privada persistida.
+- Antes do claim, o envio compara o destinatário normalizado do request ao e-mail canônico do contato. Depois de recuperar o payload durável e imediatamente antes do Resend, deriva novamente o destinatário efetivo, valida formato/unicidade, exige igualdade com request e contato e repete a consulta de supressão.
+- Divergência, destinatário efetivo inválido ou supressão tardia bloqueiam o Resend e persistem a falha; falhas de leitura do contato ou Supabase retornam JSON 503 sem envio.
+- RED focado: 14 falhas reproduziram armazenamento público, ausência da tabela privada e falta das validações do destinatário. GREEN focado final: 3 arquivos, 50 testes aprovados, incluindo mudança concorrente do e-mail canônico após preparar o payload.
+- Suíte completa: `npm test -- --reporter=dot` — 12 arquivos, 98 testes aprovados. Build: `npm run build` — compilação e geração das 39 páginas concluídas com exit code 0.
+- Nenhum teste envia e-mail real; Resend permanece mockado/injetado. Risco operacional remanescente: aplicar a migração com privilégios de service role antes de liberar o novo endpoint, pois o envio falha fechado se `ros_send_attempts` ainda não existir.

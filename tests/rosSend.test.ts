@@ -12,6 +12,7 @@ const routeState = vi.hoisted(() => ({
   markSent: vi.fn(),
   markFailed: vi.fn(),
   preparePayload: vi.fn(),
+  getExpectedRecipient: vi.fn(),
 }))
 
 vi.mock('@/lib/supabaseAdmin', () => ({
@@ -23,7 +24,8 @@ vi.mock('@/lib/outreach/repository', () => ({
   claimRosContact: routeState.claim,
   markContactSent: routeState.markSent,
   markContactFailed: routeState.markFailed,
-  getOrCreateRosSendPayload: routeState.preparePayload,
+  getOrCreateRosSendAttempt: routeState.preparePayload,
+  getRosContactEmail: routeState.getExpectedRecipient,
 }))
 
 vi.mock('resend', () => ({
@@ -53,7 +55,8 @@ function dependencies(overrides: Partial<RosSendDependencies> = {}): RosSendDepe
     send: vi.fn().mockResolvedValue({ data: { id: 'resend-1' }, error: null }),
     markSent: vi.fn().mockResolvedValue(undefined),
     markFailed: vi.fn().mockResolvedValue(undefined),
-    preparePayload: vi.fn(async (_campaignId, _contactId, payload) => payload),
+    preparePayload: vi.fn(async (_campaignId, _contactId, payload, idempotencyKey) => ({ payload, idempotencyKey })),
+    getExpectedRecipient: vi.fn().mockResolvedValue('ana@example.com'),
     createToken: vi.fn().mockResolvedValue('signed-token'),
     appBaseUrl: 'https://mail.recrutae.com.br',
     logoUrl: 'https://mail.recrutae.com.br/ros/recrutae-ros.png',
@@ -104,7 +107,7 @@ describe('sendRosEmail', () => {
     const result = await sendRosEmail(request, deps)
 
     expect(result).toEqual({ success: true, messageId: 'resend-42' })
-    expect(order).toEqual(['suppression', 'claim', 'token', 'send', 'sent'])
+    expect(order).toEqual(['suppression', 'claim', 'token', 'suppression', 'send', 'sent'])
     expect(deps.createToken).toHaveBeenCalledWith({ email: 'ana@example.com', campaignId: 'camp-1' })
     expect(deps.send).toHaveBeenCalledTimes(1)
     expect(deps.send).toHaveBeenCalledWith(
@@ -172,9 +175,9 @@ describe('sendRosEmail', () => {
       const sentPayloads: string[] = []
       const deps = dependencies({
         createToken: vi.fn(async () => `token-${Date.now()}`),
-        preparePayload: vi.fn(async (_campaignId, _contactId, candidate) => {
+        preparePayload: vi.fn(async (_campaignId, _contactId, candidate, idempotencyKey) => {
           persisted ??= JSON.stringify(candidate)
-          return JSON.parse(persisted) as RosEmailPayload
+          return { payload: JSON.parse(persisted) as RosEmailPayload, idempotencyKey }
         }),
         send: vi.fn(async payload => {
           sentPayloads.push(JSON.stringify(payload))
@@ -233,6 +236,70 @@ describe('sendRosEmail', () => {
     expect(result).toMatchObject({ success: false, unavailable: true })
     expect(deps.send).not.toHaveBeenCalled()
   })
+
+  it('bloqueia payload durável cujo destinatário diverge do request e do contato', async () => {
+    const deps = dependencies({
+      preparePayload: vi.fn(async (_campaignId, _contactId, payload, idempotencyKey) => ({
+        payload: { ...payload, to: ['outra@example.com'] },
+        idempotencyKey,
+      })),
+    })
+
+    const result = await sendRosEmail(request, deps)
+
+    expect(result).toMatchObject({ success: false, recipientMismatch: true })
+    expect(deps.send).not.toHaveBeenCalled()
+    expect(deps.markFailed).toHaveBeenCalled()
+  })
+
+  it('bloqueia destinatário efetivo suprimido após preparar o payload durável', async () => {
+    const isSuppressed = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+    const deps = dependencies({ isSuppressed })
+
+    const result = await sendRosEmail(request, deps)
+
+    expect(result).toMatchObject({ success: false, suppressed: true })
+    expect(isSuppressed).toHaveBeenNthCalledWith(2, 'ana@example.com')
+    expect(deps.send).not.toHaveBeenCalled()
+    expect(deps.markFailed).toHaveBeenCalled()
+  })
+
+  it('revalida o e-mail canônico após preparar o payload e bloqueia mudança concorrente', async () => {
+    const getExpectedRecipient = vi.fn()
+      .mockResolvedValueOnce('ana@example.com')
+      .mockResolvedValueOnce('outra@example.com')
+    const deps = dependencies({ getExpectedRecipient })
+
+    const result = await sendRosEmail(request, deps)
+
+    expect(result).toMatchObject({ success: false, recipientMismatch: true })
+    expect(getExpectedRecipient).toHaveBeenCalledTimes(2)
+    expect(deps.send).not.toHaveBeenCalled()
+    expect(deps.markFailed).toHaveBeenCalled()
+  })
+
+  it('bloqueia request que diverge do e-mail canônico do contato antes do claim', async () => {
+    const deps = dependencies({ getExpectedRecipient: vi.fn().mockResolvedValue('outra@example.com') })
+
+    const result = await sendRosEmail(request, deps)
+
+    expect(result).toMatchObject({ success: false, recipientMismatch: true })
+    expect(deps.claimContact).not.toHaveBeenCalled()
+    expect(deps.send).not.toHaveBeenCalled()
+  })
+
+  it('falha fechado quando não consegue ler o destinatário canônico', async () => {
+    const deps = dependencies({ getExpectedRecipient: vi.fn().mockRejectedValue(new Error('offline')) })
+
+    const result = await sendRosEmail(request, deps)
+
+    expect(result).toMatchObject({ success: false, unavailable: true })
+    expect(deps.isSuppressed).not.toHaveBeenCalled()
+    expect(deps.claimContact).not.toHaveBeenCalled()
+    expect(deps.send).not.toHaveBeenCalled()
+  })
 })
 
 describe('POST /api/ros/send', () => {
@@ -245,7 +312,11 @@ describe('POST /api/ros/send', () => {
     routeState.claim.mockResolvedValue(true)
     routeState.markSent.mockResolvedValue(undefined)
     routeState.markFailed.mockResolvedValue(undefined)
-    routeState.preparePayload.mockImplementation(async (_db, _campaignId, _contactId, payload) => payload)
+    routeState.preparePayload.mockImplementation(async (_db, _campaignId, _contactId, payload, idempotencyKey) => ({
+      payload,
+      idempotencyKey,
+    }))
+    routeState.getExpectedRecipient.mockResolvedValue('ana@example.com')
     process.env.RESEND_API_KEY = 're_test'
     process.env.APP_BASE_URL = 'https://mail.recrutae.com.br'
     process.env.UNSUBSCRIBE_SIGNING_SECRET = 'x'.repeat(32)
@@ -318,6 +389,20 @@ describe('POST /api/ros/send', () => {
 
   it('retorna 503 JSON quando a consulta de supressão falha', async () => {
     routeState.isSuppressed.mockRejectedValueOnce(new Error('supabase offline'))
+    const { POST } = await import('@/app/api/ros/send/route')
+
+    const response = await POST(new NextRequest('https://app.test/api/ros/send', {
+      method: 'POST', body: JSON.stringify(request), headers: { 'content-type': 'application/json' },
+    }))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({ success: false })
+    expect(routeState.claim).not.toHaveBeenCalled()
+    expect(routeState.send).not.toHaveBeenCalled()
+  })
+
+  it('retorna 503 JSON quando a leitura do destinatário canônico falha', async () => {
+    routeState.getExpectedRecipient.mockRejectedValueOnce(new Error('supabase offline'))
     const { POST } = await import('@/app/api/ros/send/route')
 
     const response = await POST(new NextRequest('https://app.test/api/ros/send', {

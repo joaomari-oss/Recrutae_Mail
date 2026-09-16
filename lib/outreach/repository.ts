@@ -146,37 +146,74 @@ export async function claimRosContact(db: SupabaseClient, campaignId: string, co
   // payload has been durably prepared. The Resend idempotency key then makes
   // replay safe even if the first response was received before `sent` persisted.
   const { data: existing, error: existingError } = await db.from('client_contacts')
-    .select('id, status, send_payload').eq('id', contactId).eq('campaign_id', campaignId).maybeSingle()
+    .select('id, status').eq('id', contactId).eq('campaign_id', campaignId).maybeSingle()
   check(existingError)
-  return existing?.status === 'sending' && typeof existing.send_payload === 'string' && !!existing.send_payload
+  if (existing?.status !== 'sending') return false
+
+  const { data: attempt, error: attemptError } = await db.from('ros_send_attempts')
+    .select('contact_id').eq('campaign_id', campaignId).eq('contact_id', contactId).maybeSingle()
+  check(attemptError)
+  return !!attempt
 }
 
-export async function getOrCreateRosSendPayload(
+export type RosSendAttempt = { payload: string; idempotencyKey: string }
+
+function mapRosSendAttempt(row: Record<string, unknown> | null): RosSendAttempt | null {
+  if (!row || typeof row.payload !== 'string' || !row.payload ||
+    typeof row.idempotency_key !== 'string' || !row.idempotency_key) return null
+  return { payload: row.payload, idempotencyKey: row.idempotency_key }
+}
+
+export async function getRosContactEmail(
+  db: SupabaseClient,
+  campaignId: string,
+  contactId: string,
+): Promise<string> {
+  await requireRosCampaign(db, campaignId)
+  const { data, error } = await db.from('client_contacts').select('email')
+    .eq('id', contactId).eq('campaign_id', campaignId).maybeSingle()
+  check(error)
+  if (!data || typeof data.email !== 'string') throw new OutreachError('Contato não encontrado.', 404)
+  return data.email
+}
+
+export async function getOrCreateRosSendAttempt(
   db: SupabaseClient,
   campaignId: string,
   contactId: string,
   payload: string,
-): Promise<string> {
+  idempotencyKey: string,
+): Promise<RosSendAttempt> {
   await requireRosCampaign(db, campaignId)
-  const { data: contact, error } = await db.from('client_contacts').select('id, status, send_payload')
+  const { data: contact, error } = await db.from('client_contacts').select('id, status')
     .eq('id', contactId).eq('campaign_id', campaignId).maybeSingle()
   check(error)
   if (!contact) throw new OutreachError('Contato não encontrado.', 404)
   if (contact.status !== 'sending') throw new OutreachError('O contato não está reservado para envio.', 409)
-  if (typeof contact.send_payload === 'string' && contact.send_payload) return contact.send_payload
 
-  const { data: stored, error: storeError } = await db.from('client_contacts').update({ send_payload: payload })
-    .eq('id', contactId).eq('campaign_id', campaignId).eq('status', 'sending')
-    .is('send_payload', null).select('send_payload')
+  const { data: existing, error: existingError } = await db.from('ros_send_attempts')
+    .select('payload, idempotency_key').eq('campaign_id', campaignId).eq('contact_id', contactId).maybeSingle()
+  check(existingError)
+  const existingAttempt = mapRosSendAttempt(existing as Record<string, unknown> | null)
+  if (existingAttempt) return existingAttempt
+
+  const { data: stored, error: storeError } = await db.from('ros_send_attempts').upsert({
+    campaign_id: campaignId,
+    contact_id: contactId,
+    payload,
+    idempotency_key: idempotencyKey,
+  }, { onConflict: 'campaign_id,contact_id', ignoreDuplicates: true }).select('payload, idempotency_key')
   check(storeError)
-  if (stored?.length === 1 && typeof stored[0].send_payload === 'string') return stored[0].send_payload
+  const storedAttempt = mapRosSendAttempt((stored?.[0] ?? null) as Record<string, unknown> | null)
+  if (storedAttempt) return storedAttempt
 
-  // A concurrent retry may have won the compare-and-set. Read its canonical
-  // serialized value instead of ever replacing it.
-  const { data: raced, error: racedError } = await db.from('client_contacts').select('send_payload')
-    .eq('id', contactId).eq('campaign_id', campaignId).eq('status', 'sending').maybeSingle()
+  // ON CONFLICT DO NOTHING is the compare-and-set: a concurrent writer can
+  // win, but its original serialized bytes and key are always canonical.
+  const { data: raced, error: racedError } = await db.from('ros_send_attempts')
+    .select('payload, idempotency_key').eq('campaign_id', campaignId).eq('contact_id', contactId).maybeSingle()
   check(racedError)
-  if (typeof raced?.send_payload === 'string' && raced.send_payload) return raced.send_payload
+  const racedAttempt = mapRosSendAttempt(raced as Record<string, unknown> | null)
+  if (racedAttempt) return racedAttempt
   throw new OutreachError('Não foi possível persistir o payload idempotente.', 503)
 }
 

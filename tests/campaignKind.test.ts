@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
 import {
-  claimRosContact, finalizeRosCampaign, getOrCreateRosSendPayload, getRosEvents, isEmailSuppressed,
+  claimRosContact, finalizeRosCampaign, getOrCreateRosSendAttempt, getRosEvents, isEmailSuppressed,
   mapRosCampaignRow, markContactFailed, markContactSent, persistRosGeneratedEmail, saveRosCampaign, sendableStatuses,
 } from '@/lib/outreach/repository'
 import type { RosCampaignConfig, RosContact } from '@/lib/rosTypes'
@@ -65,20 +65,22 @@ describe('persistência ROS', () => {
     const wrongKind = database([null])
     expect(await claimRosContact(wrongKind.db, 'clients-1', 'person-1')).toBe(false)
     expect(wrongKind.requests).toHaveLength(1)
-    const alreadySent = database([{ id: 'camp-1' }, [], { id: 'person-1', status: 'sent', send_payload: null }])
+    const alreadySent = database([{ id: 'camp-1' }, [], { id: 'person-1', status: 'sent' }])
     expect(await claimRosContact(alreadySent.db, 'camp-1', 'person-1')).toBe(false)
   })
 
   it('retoma sending somente quando o payload idempotente já foi persistido', async () => {
     const resumable = database([
       { id: 'camp-1' }, [],
-      { id: 'person-1', status: 'sending', send_payload: '{"subject":"original"}' },
+      { id: 'person-1', status: 'sending' },
+      { contact_id: 'person-1' },
     ])
     expect(await claimRosContact(resumable.db, 'camp-1', 'person-1')).toBe(true)
 
     const notPrepared = database([
       { id: 'camp-1' }, [],
-      { id: 'person-1', status: 'sending', send_payload: null },
+      { id: 'person-1', status: 'sending' },
+      null,
     ])
     expect(await claimRosContact(notPrepared.db, 'camp-1', 'person-1')).toBe(false)
   })
@@ -87,18 +89,31 @@ describe('persistência ROS', () => {
     const original = '{"from":"a","headers":{"List-Unsubscribe":"<token-1>"}}'
     const first = database([
       { id: 'camp-1' },
-      { id: 'person-1', status: 'sending', send_payload: null },
-      [{ send_payload: original }],
+      { id: 'person-1', status: 'sending' },
+      null,
+      [{ payload: original, idempotency_key: 'ros/camp-1/person-1' }],
     ])
-    expect(await getOrCreateRosSendPayload(first.db, 'camp-1', 'person-1', original)).toBe(original)
-    expect(first.requests.find(request => request.method === 'PATCH')?.body).toEqual({ send_payload: original })
+    expect(await getOrCreateRosSendAttempt(
+      first.db, 'camp-1', 'person-1', original, 'ros/camp-1/person-1',
+    )).toEqual({ payload: original, idempotencyKey: 'ros/camp-1/person-1' })
+    const insert = first.requests.find(request => request.method === 'POST')!
+    expect(insert.url.pathname).toContain('ros_send_attempts')
+    expect(insert.body).toMatchObject({
+      campaign_id: 'camp-1', contact_id: 'person-1', payload: original,
+      idempotency_key: 'ros/camp-1/person-1',
+    })
 
     const retry = database([
       { id: 'camp-1' },
-      { id: 'person-1', status: 'sending', send_payload: original },
+      { id: 'person-1', status: 'sending' },
+      { payload: original, idempotency_key: 'ros/camp-1/person-1' },
     ])
-    expect(await getOrCreateRosSendPayload(retry.db, 'camp-1', 'person-1', '{"changed":true}')).toBe(original)
-    expect(retry.requests.some(request => request.method === 'PATCH')).toBe(false)
+    expect(await getOrCreateRosSendAttempt(
+      retry.db, 'camp-1', 'person-1', '{"changed":true}', 'changed-key',
+    )).toEqual({ payload: original, idempotencyKey: 'ros/camp-1/person-1' })
+    expect(retry.requests.some(request => request.method === 'POST')).toBe(false)
+    expect(retry.requests.filter(request => request.url.pathname.includes('client_contacts'))
+      .every(request => !request.url.searchParams.get('select')?.includes('send_payload'))).toBe(true)
   })
 
   it('propaga erros de reserva em vez de continuar o envio', async () => {

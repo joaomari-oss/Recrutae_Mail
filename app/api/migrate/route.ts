@@ -46,11 +46,8 @@ create table if not exists client_contacts (
   message_id       text,
   error_message    text,
   sent_at          timestamptz,
-  send_payload     text,
   created_at       timestamptz not null default now()
 );
-
-alter table client_contacts add column if not exists send_payload text;
 
 -- Migração segura: converte uuid → text se necessário
 do $$ begin
@@ -115,6 +112,45 @@ do $$ begin
   end if;
 end $$;
 
+create table if not exists ros_send_attempts (
+  campaign_id     text not null references client_campaigns(id) on delete cascade,
+  contact_id      text not null references client_contacts(id) on delete cascade,
+  payload         text not null,
+  idempotency_key text not null,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  primary key (campaign_id, contact_id)
+);
+
+alter table ros_send_attempts enable row level security;
+revoke all on table ros_send_attempts from public;
+revoke all on table ros_send_attempts from anon, authenticated;
+grant select, insert, update, delete on table ros_send_attempts to service_role;
+
+do $$ declare policy_row record;
+begin
+  for policy_row in
+    select polname from pg_policy where polrelid = 'ros_send_attempts'::regclass
+  loop
+    execute format('drop policy %I on ros_send_attempts', policy_row.polname);
+  end loop;
+end $$;
+
+do $$ begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'client_contacts' and column_name = 'send_payload'
+  ) then
+    insert into ros_send_attempts (campaign_id, contact_id, payload, idempotency_key)
+    select campaign_id, id, send_payload, 'ros/' || campaign_id || '/' || id
+    from client_contacts
+    where send_payload is not null and send_payload <> ''
+    on conflict (campaign_id, contact_id) do nothing;
+
+    alter table client_contacts drop column if exists send_payload;
+  end if;
+end $$;
+
 create table if not exists email_suppressions (
   email text primary key,
   reason text not null check (reason in ('unsubscribe', 'bounce', 'complaint')),
@@ -172,9 +208,12 @@ export async function GET() {
   const { error: suppressionErr } = usingAdmin
     ? await db.from('email_suppressions').select('email, reason, source, message_id, created_at').limit(0)
     : { error: null }
+  const { error: sendAttemptsErr } = usingAdmin
+    ? await db.from('ros_send_attempts').select('campaign_id, contact_id, payload, idempotency_key').limit(0)
+    : { error: null }
   const { error: eventsErr } = await db.from('email_events').select('contact_id, campaign_id, event_type, received_at').limit(0)
 
-  if (campErr || contErr || suppressionErr || eventsErr) {
+  if (campErr || contErr || suppressionErr || sendAttemptsErr || eventsErr) {
     const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')
       .replace('https://', '')
       .replace('.supabase.co', '')
@@ -194,6 +233,7 @@ export async function GET() {
           client_campaigns: campErr?.message ?? null,
           client_contacts: contErr?.message ?? null,
           email_suppressions: suppressionErr?.message ?? null,
+          ros_send_attempts: sendAttemptsErr?.message ?? null,
           email_events: eventsErr?.message ?? null,
         },
       },
