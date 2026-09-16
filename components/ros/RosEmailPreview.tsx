@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { renderOutreachEmail, type OutreachEmailInput } from '@/lib/outreach/emailHtml'
 
 export type RosEmailPreviewProps = Omit<OutreachEmailInput, 'brand' | 'logoUrl'> & {
@@ -8,12 +9,8 @@ export type RosEmailPreviewProps = Omit<OutreachEmailInput, 'brand' | 'logoUrl'>
 }
 
 function resolvePreviewUrl(url: string): string {
-  const baseUrl = typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_SITE_URL || 'https://mail.recrutae.com.br'
-    : window.location.origin
-
   try {
-    return new URL(url, baseUrl).toString()
+    return new URL(url, window.location.origin).toString()
   } catch {
     return url
   }
@@ -21,7 +18,13 @@ function resolvePreviewUrl(url: string): string {
 
 /** Visual preview backed by the exact HTML sent by the ROS delivery route. */
 export function RosEmailPreview({ logoUrl = '/ros/recrutae-ros.png', title = 'Prévia do e-mail', ...input }: RosEmailPreviewProps) {
-  const email = renderOutreachEmail({ ...input, brand: 'ros', logoUrl: resolvePreviewUrl(logoUrl) })
+  const [previewLogoUrl, setPreviewLogoUrl] = useState(logoUrl)
+
+  useEffect(() => {
+    setPreviewLogoUrl(resolvePreviewUrl(logoUrl))
+  }, [logoUrl])
+
+  const email = renderOutreachEmail({ ...input, brand: 'ros', logoUrl: previewLogoUrl })
 
   return (
     <section aria-label={title} className="overflow-hidden rounded-lg border border-[#35334d] bg-[#0B0A18]">
