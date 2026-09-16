@@ -81,3 +81,32 @@ describe('email ROS', () => {
     expect(rendered.html).not.toContain('Para não receber mais emails, responda com "cancelar".')
   })
 })
+
+describe('assinatura com WhatsApp', () => {
+  it('transforma o número em link clicável no HTML e no texto', async () => {
+    const { renderOutreachEmail } = await import('@/lib/outreach/emailHtml')
+
+    const rendered = renderOutreachEmail({
+      body: 'Olá!', recruiterName: 'João', recruiterRole: 'Comercial',
+      recruiterLinkedin: 'https://linkedin.com/in/joao', recruiterWhatsapp: '5511999999999',
+      brand: 'ros', logoUrl: 'https://mail.recrutae.com.br/ros/recrutae-ros.png',
+    })
+
+    expect(rendered.html).toContain('href="https://wa.me/5511999999999"')
+    expect(rendered.html).toContain('>WhatsApp</a>')
+    expect(rendered.text).toContain('WhatsApp: https://wa.me/5511999999999')
+    expect(rendered.html).toContain('href="https://linkedin.com/in/joao"')
+  })
+
+  it('aceita o número já em formato de URL e omite quando vazio', async () => {
+    const { renderOutreachEmail } = await import('@/lib/outreach/emailHtml')
+    const base = {
+      body: 'Olá!', recruiterName: 'João', recruiterRole: '', recruiterLinkedin: '',
+      brand: 'ros' as const, logoUrl: 'https://mail.recrutae.com.br/ros/recrutae-ros.png',
+    }
+
+    expect(renderOutreachEmail({ ...base, recruiterWhatsapp: 'https://wa.me/5511888888888' }).html)
+      .toContain('href="https://wa.me/5511888888888"')
+    expect(renderOutreachEmail({ ...base, recruiterWhatsapp: '' }).html).not.toContain('wa.me')
+  })
+})

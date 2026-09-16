@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -69,15 +69,19 @@ function validate(form: Form): Partial<Record<keyof Form, string>> {
 export default function RosComposePage() {
   const router = useRouter()
   const createCampaign = useRosStore((state) => state.createCampaign)
-  const deleteCampaign = useRosStore((state) => state.deleteCampaign)
 
   const [contacts, setContacts] = useState<RosContact[]>([])
   const [form, setForm] = useState<Form>(emptyForm)
   const [errors, setErrors] = useState<Partial<Record<keyof Form, string>>>({})
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  // O remetente real vem do servidor; até lá o padrão evita campo vazio.
-  const [senderTouched, setSenderTouched] = useState(false)
+  // O remetente real vem do servidor; até lá o padrão evita campo vazio. É um
+  // ref porque o efeito do preflight roda uma vez só e leria um valor velho.
+  const senderTouched = useRef(false)
+  // O id da campanha é cunhado uma única vez: numa nova tentativa depois de
+  // falha, trocar de id faria os contatos pertencerem a outra campanha e o
+  // servidor recusaria o lote para sempre.
+  const campaignIdRef = useRef<string | null>(null)
 
   useEffect(() => { setContacts(readPendingContacts()) }, [])
 
@@ -86,8 +90,8 @@ export default function RosComposePage() {
     fetch('/api/ros/preflight')
       .then((response) => response.json())
       .then((result: { fromEmail?: string }) => {
-        if (!active || !result?.fromEmail) return
-        setForm((current) => (senderTouched ? current : {
+        if (!active || !result?.fromEmail || senderTouched.current) return
+        setForm((current) => ({
           ...current,
           recruiterEmail: result.fromEmail as string,
           replyTo: current.replyTo === DEFAULT_FROM_EMAIL ? (result.fromEmail as string) : current.replyTo,
@@ -135,7 +139,11 @@ export default function RosComposePage() {
       variationPercent: form.variationPercent,
     }
 
-    const campaignId = createCampaign(form.name.trim(), contacts, config)
+    const campaignId = campaignIdRef.current ?? createCampaign(form.name.trim(), contacts, config)
+    campaignIdRef.current = campaignId
+    if (useRosStore.getState().activeCampaignId !== campaignId) {
+      useRosStore.getState().setActiveCampaign(campaignId)
+    }
     const campaign: RosCampaign = {
       id: campaignId, name: form.name.trim(), createdAt: new Date().toISOString(),
       campaignKind: 'ros', status: 'draft', totalContacts: contacts.length,
@@ -157,8 +165,12 @@ export default function RosComposePage() {
       sessionStorage.removeItem(PENDING_CONTACTS_KEY)
       router.push('/ros/review')
     } catch (cause) {
-      deleteCampaign(campaignId)
-      setSaveError(cause instanceof Error ? cause.message : 'Não foi possível salvar a campanha.')
+      // A campanha local permanece: o POST pode ter gravado antes de a resposta
+      // falhar, e repetir com o mesmo id é a única retentativa que o servidor
+      // aceita — `saveRosCampaign` é idempotente por id de campanha.
+      const message = cause instanceof Error ? cause.message : 'Não foi possível salvar a campanha.'
+      toast.error(message)
+      setSaveError(`${message} Os contatos continuam aqui — tente salvar novamente.`)
     } finally {
       setSaving(false)
     }
@@ -216,10 +228,12 @@ export default function RosComposePage() {
               )}
             </Field>
 
-            <Field label="E-mail de envio" error={errors.recruiterEmail}>
+            <Field label="E-mail de envio" error={errors.recruiterEmail} errorId="ros-erro-remetente">
               {(id) => (
                 <input id={id} type="email" value={form.recruiterEmail}
-                  onChange={(e) => { setSenderTouched(true); set('recruiterEmail', e.target.value) }}
+                  aria-invalid={errors.recruiterEmail ? true : undefined}
+                  aria-describedby={errors.recruiterEmail ? 'ros-erro-remetente' : undefined}
+                  onChange={(e) => { senderTouched.current = true; set('recruiterEmail', e.target.value) }}
                   className={`${inputClass} font-mono text-xs`} />
               )}
             </Field>
@@ -309,9 +323,11 @@ export default function RosComposePage() {
 
 const inputClass = 'w-full rounded-lg border border-white/10 bg-brand-dark px-3 py-2 text-sm text-brand-white outline-none transition-colors placeholder:text-brand-muted/40 focus:border-brand-coral/60'
 
-function Field({ label, error, children }: {
+function Field({ label, error, errorId, children }: {
   label: string
   error?: string
+  /** Id fixo quando o campo precisa referenciar a mensagem por `aria-describedby`. */
+  errorId?: string
   children: (id: string) => React.ReactNode
 }) {
   const id = `ros-campo-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
@@ -321,7 +337,7 @@ function Field({ label, error, children }: {
         {label}
       </label>
       {children(id)}
-      {error && <p role="alert" className="text-sm text-brand-error">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-sm text-brand-error">{error}</p>}
     </div>
   )
 }

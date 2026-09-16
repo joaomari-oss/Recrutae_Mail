@@ -105,3 +105,28 @@ describe('marcadores e links convivem no template', () => {
     expect(result.body).not.toContain('[Empresa]')
   })
 })
+
+describe('marcação aninhada e limites', () => {
+  it('renderiza link dentro de negrito e negrito dentro de link', () => {
+    const boldLink = renderInlineHtml('**[Clique aqui](https://recrutae.com.br/os)**', ACCENT)
+    expect(boldLink).toContain('<strong><a href="https://recrutae.com.br/os"')
+    expect(boldLink).toContain('>Clique aqui</a></strong>')
+    expect(boldLink).not.toContain('[Clique aqui]')
+
+    const linkBold = renderInlineHtml('[**Clique aqui**](https://recrutae.com.br/os)', ACCENT)
+    expect(linkBold).toContain('<strong>Clique aqui</strong></a>')
+  })
+
+  it('mantém HTML e texto puro coerentes no caso aninhado', () => {
+    expect(richTextToPlain('**[Clique aqui](https://recrutae.com.br/os)**'))
+      .toBe('Clique aqui (https://recrutae.com.br/os)')
+  })
+
+  it('não estoura a pilha com marcação repetida em excesso', () => {
+    const heavy = `[${'**a**'.repeat(20000)}](https://ok.com)`
+    expect(() => renderInlineHtml(heavy, ACCENT)).not.toThrow()
+
+    const heavyBody = '**a**'.repeat(20000)
+    expect(() => renderInlineHtml(heavyBody, ACCENT)).not.toThrow()
+  })
+})

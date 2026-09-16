@@ -43,13 +43,46 @@ function anchor(url: string, label: string, accent: string): string {
   return `<a href="${escapeHtml(url)}" style="color:${accent};text-decoration:underline;font-weight:600;">${label}</a>`
 }
 
-/** Negrito dentro do rótulo de um link, sem recursão infinita de links. */
+/**
+ * Negrito dentro do rótulo de um link. Iterativo de propósito: um rótulo com
+ * milhares de marcadores estouraria a pilha numa versão recursiva, e esse texto
+ * vem do operador.
+ */
 function renderBoldOnly(value: string): string {
-  const match = BOLD_RE.exec(value)
-  if (!match) return escapeHtml(value)
-  return escapeHtml(value.slice(0, match.index))
-    + `<strong>${escapeHtml(match[1])}</strong>`
-    + renderBoldOnly(value.slice(match.index + match[0].length))
+  let rest = value
+  let html = ''
+  for (;;) {
+    const match = BOLD_RE.exec(rest)
+    if (!match) return html + escapeHtml(rest)
+    html += escapeHtml(rest.slice(0, match.index)) + `<strong>${escapeHtml(match[1])}</strong>`
+    rest = rest.slice(match.index + match[0].length)
+  }
+}
+
+/** Links (nomeados e soltos) dentro de um trecho em negrito, sem aninhar negrito. */
+function renderLinksOnly(value: string, accent: string): string {
+  let rest = value
+  let html = ''
+  for (;;) {
+    const link = LINK_RE.exec(rest)
+    const bare = BARE_URL_RE.exec(rest)
+    const first = link && bare ? (link.index <= bare.index ? 'link' : 'bare') : link ? 'link' : bare ? 'bare' : null
+    if (!first) return html + escapeHtml(rest)
+
+    if (first === 'link' && link) {
+      const url = safeHttpUrl(link[2])
+      const label = link[1].trim()
+      html += escapeHtml(rest.slice(0, link.index))
+        + (url ? anchor(url, escapeHtml(label) || escapeHtml(url), accent) : escapeHtml(label))
+      rest = rest.slice(link.index + link[0].length)
+    } else if (bare) {
+      const raw = bare[0].replace(TRAILING_PUNCTUATION, '')
+      const url = safeHttpUrl(raw)
+      html += escapeHtml(rest.slice(0, bare.index))
+        + (url ? anchor(url, escapeHtml(url), accent) : escapeHtml(raw))
+      rest = rest.slice(bare.index + raw.length)
+    }
+  }
 }
 
 function nextMatch(value: string, accent: string): Match | null {
@@ -72,7 +105,9 @@ function nextMatch(value: string, accent: string): Match | null {
     candidates.push({
       index: bold.index,
       length: bold[0].length,
-      render: () => `<strong>${escapeHtml(bold[1])}</strong>`,
+      // `**[Clique aqui](url)**` precisa sair como link em negrito; sem isso a
+      // marcação apareceria literal e o endereço ficaria morto no e-mail.
+      render: () => `<strong>${renderLinksOnly(bold[1], accent)}</strong>`,
     })
   }
 

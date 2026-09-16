@@ -66,6 +66,17 @@ function renderBody(body: string, accent: string): string {
   }).join('')
 }
 
+/**
+ * A composição guarda o WhatsApp só com dígitos; o link precisa de um endereço.
+ * Sem esta conversão o contato some da assinatura sem nenhum aviso.
+ */
+function whatsappUrl(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const digits = trimmed.replace(/\D/g, '')
+  return /^https?:\/\//i.test(trimmed) ? trimmed : digits ? `https://wa.me/${digits}` : ''
+}
+
 function renderOptionalLink(label: string, value: string, accent: string): string {
   const url = safeHttpUrl(value)
   if (!url) return ''
@@ -80,7 +91,8 @@ function renderText(input: OutreachEmailInput, theme: BrandTheme): string {
   if (input.recruiterRole.trim()) lines.push(input.recruiterRole.trim())
   lines.push(theme.label)
   if (safeHttpUrl(input.recruiterLinkedin)) lines.push(`LinkedIn: ${input.recruiterLinkedin}`)
-  if (safeHttpUrl(input.recruiterWhatsapp)) lines.push(`WhatsApp: ${input.recruiterWhatsapp}`)
+  const whatsapp = whatsappUrl(input.recruiterWhatsapp)
+  if (safeHttpUrl(whatsapp)) lines.push(`WhatsApp: ${whatsapp}`)
   if (safeHttpUrl(input.unsubscribeUrl ?? '')) lines.push('', `Descadastrar: ${input.unsubscribeUrl}`)
 
   return lines.join('\n')
@@ -101,7 +113,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): { html: string; 
     : `<span style="font-size:14px;font-weight:700;color:${theme.dark};">${theme.label}</span>`
   const contacts = [
     renderOptionalLink('LinkedIn', input.recruiterLinkedin, theme.accent),
-    renderOptionalLink('WhatsApp', input.recruiterWhatsapp, theme.accent),
+    renderOptionalLink('WhatsApp', whatsappUrl(input.recruiterWhatsapp), theme.accent),
   ].filter(Boolean).join('<span style="padding:0 6px;color:#9CA3AF;">·</span>')
 
   const unsubscribe = unsubscribeUrl

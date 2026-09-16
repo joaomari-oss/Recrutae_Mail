@@ -217,8 +217,8 @@ describe('persistência ROS', () => {
       { contact_id: 'person-1', event_type: 'opened', received_at: '2026-09-02' },
       { contact_id: 'person-1', event_type: 'clicked', received_at: '2026-09-03' },
     ]])
-    expect(await getRosEvents(db, 'camp-1')).toEqual({ campaignId: 'camp-1', totalOpened: 1, totalClicked: 1,
-      contacts: [{ contactId: 'person-1', opened: true, clicked: true, openedAt: '2026-09-01', clickedAt: '2026-09-03' }] })
+    expect(await getRosEvents(db, 'camp-1')).toEqual({ campaignId: 'camp-1', totalDelivered: 0, totalOpened: 1, totalClicked: 1,
+      contacts: [{ contactId: 'person-1', delivered: false, opened: true, clicked: true, openedAt: '2026-09-01', clickedAt: '2026-09-03' }] })
     await expect(getRosEvents(database([null]).db, 'clients-1')).rejects.toThrow()
   })
 

@@ -295,6 +295,7 @@ export async function finalizeRosCampaign(db: SupabaseClient, campaignId: string
 
 type RosContactEventSummary = {
   contactId: string
+  delivered: boolean
   opened: boolean
   clicked: boolean
   openedAt?: string
@@ -309,14 +310,15 @@ export async function getRosEvents(db: SupabaseClient, campaignId: string) {
   // events sharing a timestamp are neither skipped nor double-counted.
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await db.from('email_events').select('id, contact_id, event_type, received_at')
-      .eq('campaign_id', campaignId).in('event_type', ['opened', 'clicked'])
+      .eq('campaign_id', campaignId).in('event_type', ['delivered', 'opened', 'clicked'])
       .order('received_at', { ascending: true }).order('id', { ascending: true }).range(offset, offset + 999)
     check(error)
     for (const row of data ?? []) {
       if (!row.contact_id) continue
       const entry: RosContactEventSummary = contactMap.get(row.contact_id) ?? {
-        contactId: row.contact_id, opened: false, clicked: false,
+        contactId: row.contact_id, delivered: false, opened: false, clicked: false,
       }
+      if (row.event_type === 'delivered') entry.delivered = true
       if (row.event_type === 'opened' && !entry.opened) { entry.opened = true; entry.openedAt = row.received_at }
       if (row.event_type === 'clicked' && !entry.clicked) { entry.clicked = true; entry.clickedAt = row.received_at }
       contactMap.set(row.contact_id, entry)
@@ -324,5 +326,70 @@ export async function getRosEvents(db: SupabaseClient, campaignId: string) {
     if ((data?.length ?? 0) < 1000) break
   }
   const contacts = Array.from(contactMap.values())
-  return { campaignId, totalOpened: contacts.filter(c => c.opened).length, totalClicked: contacts.filter(c => c.clicked).length, contacts }
+  return {
+    campaignId,
+    totalDelivered: contacts.filter(c => c.delivered).length,
+    totalOpened: contacts.filter(c => c.opened).length,
+    totalClicked: contacts.filter(c => c.clicked).length,
+    contacts,
+  }
+}
+
+/**
+ * Campanhas ROS para o histórico.
+ *
+ * Só colunas de resumo: nada de corpo de e-mail, payload de envio ou chave
+ * idempotente — esses ficam na tabela privada criada na tarefa 8.
+ */
+export async function listRosCampaigns(db: SupabaseClient) {
+  const { data, error } = await db.from('client_campaigns')
+    .select('id, name, status, contact_count, sent_count, failed_count, created_at, recruiter_name, recruiter_email')
+    .eq('campaign_kind', 'ros')
+    .order('created_at', { ascending: false })
+    .limit(200)
+  check(error)
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    name: (row.name as string) ?? '',
+    status: (row.status as string) ?? 'draft',
+    totalContacts: Number(row.contact_count ?? 0),
+    sentCount: Number(row.sent_count ?? 0),
+    failedCount: Number(row.failed_count ?? 0),
+    createdAt: (row.created_at as string) ?? '',
+    recruiterName: (row.recruiter_name as string) ?? '',
+    recruiterEmail: (row.recruiter_email as string) ?? '',
+  }))
+}
+
+/** Situação de cada contato, para reconciliar a aba com o servidor. */
+export async function listRosCampaignContactStatuses(db: SupabaseClient, campaignId: string) {
+  await requireRosCampaign(db, campaignId)
+  const rows: Array<{ id: string; status: string; sentAt?: string; messageId?: string; errorMessage?: string }> = []
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await db.from('client_contacts')
+      .select('id, status, sent_at, message_id, error_message')
+      .eq('campaign_id', campaignId).order('id').range(offset, offset + 999)
+    check(error)
+    for (const row of data ?? []) {
+      rows.push({
+        id: row.id as string,
+        status: (row.status as string) ?? 'pending',
+        sentAt: (row.sent_at as string) ?? undefined,
+        messageId: (row.message_id as string) ?? undefined,
+        errorMessage: (row.error_message as string) ?? undefined,
+      })
+    }
+    if ((data?.length ?? 0) < 1000) break
+  }
+  return rows
+}
+
+/** Remove a campanha ROS e seus contatos. Nunca toca em campanhas de Clientes. */
+export async function deleteRosCampaign(db: SupabaseClient, campaignId: string) {
+  await requireRosCampaign(db, campaignId)
+  const { error: contactsError } = await db.from('client_contacts').delete().eq('campaign_id', campaignId)
+  check(contactsError)
+  const { error } = await db.from('client_campaigns').delete()
+    .eq('id', campaignId).eq('campaign_kind', 'ros')
+  check(error)
 }

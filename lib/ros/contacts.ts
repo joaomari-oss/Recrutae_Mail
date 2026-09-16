@@ -119,4 +119,6 @@ export function isCompleteRosContact(value: unknown): value is RosContact {
     && typeof contact.status === 'string'
     && CONTACT_STATUSES.includes(contact.status)
     && typeof contact.sendAttempts === 'number'
+    // Mesmo formato que a API exige: uma linha torta aqui reprovaria o lote inteiro.
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((contact.email as string).trim())
 }

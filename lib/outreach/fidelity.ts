@@ -27,12 +27,15 @@ function numbers(text: string): string[] {
  * não pode remover o destaque nem renomear o rótulo do CTA clicável.
  */
 function markup(text: string): string[] {
+  // Mesma normalizacao dos tokens lexicais: trocar "Recrutae" por "Recrutaê"
+  // dentro de um negrito e variacao legitima e nao deve forcar o texto-base.
+  const key = (value: string) => value.trim().normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
   const found: string[] = []
   for (const match of text.matchAll(/\*\*([^*\n]+)\*\*/g)) {
-    found.push(`b:${match[1].trim().toLowerCase()}`)
+    found.push(`b:${key(match[1])}`)
   }
   for (const match of text.matchAll(/\[([^\]\n]*)\]\(([^)\s]+)\)/g)) {
-    found.push(`a:${match[1].trim().toLowerCase()}|${match[2].trim()}`)
+    found.push(`a:${key(match[1])}|${match[2].trim()}`)
   }
   return found
 }

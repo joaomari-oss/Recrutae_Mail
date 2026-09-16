@@ -26,10 +26,13 @@ export function RosBodyEditor({ label, value, onChange, rows = 12, placeholder, 
   const wrapSelection = (before: string, after: string, fallback: string) => {
     const field = textarea.current
     if (!field) return
+    // Lê do próprio campo: dois cliques seguidos com `onChange` atrasado
+    // calculariam a partir de um texto velho e perderiam a primeira inserção.
+    const current = field.value
     const start = field.selectionStart
     const end = field.selectionEnd
-    const selected = value.slice(start, end) || fallback
-    const next = value.slice(0, start) + before + selected + after + value.slice(end)
+    const selected = current.slice(start, end) || fallback
+    const next = current.slice(0, start) + before + selected + after + current.slice(end)
     onChange(next)
     // O React reescreve o valor; o cursor precisa ser reposicionado depois.
     requestAnimationFrame(() => {

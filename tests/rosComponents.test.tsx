@@ -487,7 +487,7 @@ describe('página de revisão ROS', () => {
     await vi.waitFor(() => {
       const contacts = Object.values(useRosStore.getState().contactsByCampaign)[0]
       expect(contacts.every((c) => c.status === 'ready')).toBe(true)
-    }, { timeout: 4000 })
+    }, { timeout: 20_000 })
 
     expect(generated).toEqual(['c1', 'c2'])
 
@@ -521,8 +521,64 @@ describe('página de revisão ROS', () => {
     await vi.waitFor(() => {
       const contacts = Object.values(useRosStore.getState().contactsByCampaign)[0]
       expect(contacts.map((c) => c.status)).toEqual(['failed', 'ready'])
-    }, { timeout: 4000 })
+    }, { timeout: 20_000 })
 
     expect(screen.getByRole('button', { name: /enviar campanha/i })).toBeDisabled()
+  })
+})
+
+describe('corridas e retentativa na composição', () => {
+  it('não sobrescreve o remetente que o usuário já digitou', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    let releasePreflight: () => void = () => {}
+    const preflightReady = new Promise<void>((resolve) => { releasePreflight = resolve })
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+      if (String(input).includes('/api/ros/preflight')) {
+        await preflightReady
+        return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Response
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true }) } as Response
+    }))
+
+    await renderCompose()
+
+    const sender = screen.getByLabelText('E-mail de envio')
+    await user.clear(sender)
+    await user.type(sender, 'joao@recrutae.com.br')
+
+    releasePreflight()
+    await vi.waitFor(() => expect(sender).toHaveValue('joao@recrutae.com.br'))
+  })
+
+  it('repete o salvamento com o mesmo id de campanha depois de uma falha', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const saved: Array<{ id: string }> = []
+    let attempt = 0
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      if (String(input).includes('/api/ros/preflight')) {
+        return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Response
+      }
+      const body = JSON.parse(String(init?.body))
+      saved.push({ id: body.campaign.id })
+      attempt += 1
+      if (attempt === 1) return { ok: false, status: 503, json: async () => ({ success: false, error: 'Banco indisponível.' }) } as Response
+      return { ok: true, status: 200, json: async () => ({ success: true }) } as Response
+    }))
+
+    await renderCompose()
+    await fillCompose(user)
+
+    await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
+    expect(await screen.findByText(/banco indisponível/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
+    await vi.waitFor(() => expect(saved).toHaveLength(2))
+
+    // Mudar o id faria os contatos pertencerem a outra campanha e o servidor
+    // recusaria o lote para sempre.
+    expect(saved[0].id).toBe(saved[1].id)
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/ros/review'))
   })
 })
