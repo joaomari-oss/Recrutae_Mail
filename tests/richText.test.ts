@@ -79,3 +79,29 @@ describe('fidelidade preserva a marcação', () => {
     expect(validateRosVariation(base, varied).ok).toBe(true)
   })
 })
+
+describe('marcadores e links convivem no template', () => {
+  it('preenche o marcador e preserva o link nomeado', async () => {
+    const { renderEmailTemplate } = await import('@/lib/templateRender')
+
+    const result = renderEmailTemplate(
+      'Novidade para a [Empresa]',
+      'Olá, {{nome}}! Conheça o **Recrutaê OS**.\n\n[Clique aqui](https://recrutae.com.br/os) para ver a plataforma.',
+      { firstName: 'Ana', company: 'Acme' },
+    )
+
+    expect(result.subject).toBe('Novidade para a Acme')
+    expect(result.body).toContain('[Clique aqui](https://recrutae.com.br/os)')
+    expect(result.body).toContain('**Recrutaê OS**')
+    expect(result.body).toContain('Olá, Ana!')
+  })
+
+  it('remove marcador vazio sem tocar no link', async () => {
+    const { renderEmailTemplate } = await import('@/lib/templateRender')
+
+    const result = renderEmailTemplate('', 'Trabalha na [Empresa] hoje? [Veja aqui](https://recrutae.com.br/os).', { firstName: 'Ana' })
+
+    expect(result.body).toContain('[Veja aqui](https://recrutae.com.br/os)')
+    expect(result.body).not.toContain('[Empresa]')
+  })
+})

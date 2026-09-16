@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
 import type { RosContact } from '@/lib/rosTypes'
 import { RosContactTable } from '@/components/ros/RosContactTable'
@@ -268,5 +268,102 @@ describe('portão de saída da tela de contatos', () => {
 
     expect(await screen.findByLabelText('E-mail do contato 1')).toHaveValue('ok@example.com')
     expect(screen.queryByLabelText('E-mail do contato 2')).toBeNull()
+  })
+})
+
+// ── Task 11: composição da campanha ────────────────────────────────────
+
+afterEach(() => { vi.unstubAllGlobals() })
+
+const pendingContact = rosContact({
+  id: 'c1', email: 'ana@example.com', fullName: 'Ana Souza', firstName: 'Ana', lastName: 'Souza',
+  company: 'Acme', position: 'Head de RH',
+})
+
+function mockRosApi(saveResponse: unknown = { success: true }, saveStatus = 200) {
+  const calls: Array<{ url: string; body?: unknown }> = []
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const url = String(input)
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+    if (url.includes('/api/ros/preflight')) {
+      return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Response
+    }
+    return { ok: saveStatus < 400, status: saveStatus, json: async () => saveResponse } as Response
+  }))
+  return calls
+}
+
+async function renderCompose() {
+  sessionStorage.setItem('ros-pending-contacts', JSON.stringify([pendingContact]))
+  const { default: Page } = await import('@/app/ros/compose/page')
+  return render(<Page />)
+}
+
+async function fillCompose(user: { type: (el: Element, text: string) => Promise<void> }) {
+  await user.type(screen.getByLabelText('Nome da campanha'), 'Divulgação setembro')
+  await user.type(screen.getByLabelText('Assunto'), 'Conheça o Recrutaê OS')
+  await user.type(screen.getByLabelText('Mensagem'), 'Olá, {{nome}}! Conheça o **Recrutaê OS**.')
+  await user.type(screen.getByLabelText('Nome do remetente'), 'João Mari')
+}
+
+describe('composição da campanha ROS', () => {
+  it('inicia com o remetente ROS, variação desligada e assinatura do OS', async () => {
+    mockRosApi()
+    await renderCompose()
+
+    expect(screen.getByLabelText('E-mail de envio')).toHaveValue('contato@recrutae.com.br')
+    expect(screen.getByLabelText('Variar assunto')).not.toBeChecked()
+    expect(screen.getByLabelText('Variação por contato')).toHaveValue('6')
+    expect(screen.getAllByText('Recrutaê | OS').length).toBeGreaterThan(0)
+  })
+
+  it('recusa remetente fora do domínio da Recrutaê', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const calls = mockRosApi()
+    await renderCompose()
+    await fillCompose(user)
+
+    const sender = screen.getByLabelText('E-mail de envio')
+    await user.clear(sender)
+    await user.type(sender, 'contato@gmail.com')
+    await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
+
+    expect(screen.getByText(/deve usar o domínio @recrutae\.com\.br/i)).toBeInTheDocument()
+    expect(calls.some((call) => call.url.includes('save-campaign'))).toBe(false)
+  })
+
+  it('só navega e limpa a sessão depois que a campanha é salva', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    mockRosApi({ success: false, error: 'Supabase fora do ar.' }, 503)
+    await renderCompose()
+    await fillCompose(user)
+
+    await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
+
+    expect(await screen.findByText(/supabase fora do ar/i)).toBeInTheDocument()
+    expect(sessionStorage.getItem('ros-pending-contacts')).not.toBeNull()
+    expect(push).not.toHaveBeenCalledWith('/ros/review')
+  })
+
+  it('persiste a campanha com os contatos e segue para a revisão', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const calls = mockRosApi()
+    await renderCompose()
+    await fillCompose(user)
+
+    await user.click(screen.getByRole('button', { name: /revisar e-mails/i }))
+
+    const save = await vi.waitFor(() => {
+      const found = calls.find((call) => call.url.includes('save-campaign'))
+      if (!found) throw new Error('save-campaign não foi chamado')
+      return found
+    })
+    const body = save.body as { campaign: { campaignKind: string }; config: Record<string, unknown>; contacts: unknown[] }
+    expect(body.campaign.campaignKind).toBe('ros')
+    expect(body.config.recruiterEmail).toBe('contato@recrutae.com.br')
+    expect(body.config.variationPercent).toBe(6)
+    expect(body.contacts).toHaveLength(1)
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/ros/review'))
+    expect(sessionStorage.getItem('ros-pending-contacts')).toBeNull()
   })
 })
