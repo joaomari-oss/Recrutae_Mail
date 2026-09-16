@@ -19,12 +19,13 @@ describe('RosEmailPreview', () => {
 
     const browserInitialMarkup = renderToStaticMarkup(<RosEmailPreview {...props} />)
     expect(serverMarkup).not.toContain('mail.recrutae.com.br')
-    expect(serverMarkup).toContain('Recrutaê | OS')
+    expect(serverMarkup).toContain('RECRUTAÊ OPERATING SYSTEM')
     expect(browserInitialMarkup).toBe(serverMarkup)
 
     const { getByTitle } = render(<RosEmailPreview {...props} />)
 
     const preview = getByTitle('Prévia do e-mail') as HTMLIFrameElement
-    expect(preview.srcdoc).toContain(`src="${new URL('/ros/recrutae-ros.png', window.location.origin).href}"`)
+    // A assinatura do modelo usa o emblema circular, resolvido após o mount.
+    expect(preview.srcdoc).toContain(`src="${new URL('/ros/ros-emblema.png', window.location.origin).href}"`)
   })
 })

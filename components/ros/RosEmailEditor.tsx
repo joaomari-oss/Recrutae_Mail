@@ -152,6 +152,7 @@ export function RosEmailEditor({
             recruiterRole={config.recruiterRole}
             recruiterLinkedin={config.recruiterLinkedin}
             recruiterWhatsapp={config.recruiterWhatsapp}
+            recruiterEmail={config.replyTo || config.recruiterEmail}
           />
         </>
       )}

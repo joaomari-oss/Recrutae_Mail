@@ -385,6 +385,7 @@ export default function RosComposePage() {
             recruiterRole={form.recruiterRole}
             recruiterLinkedin={form.recruiterLinkedin}
             recruiterWhatsapp={form.recruiterWhatsapp}
+            recruiterEmail={form.replyTo || form.recruiterEmail}
           />
         </aside>
       </div>

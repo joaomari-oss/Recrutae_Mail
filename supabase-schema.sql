@@ -204,22 +204,30 @@ create policy "recrutae_all_campaigns"
   using (campaign_kind is distinct from 'ros')
   with check (campaign_kind is distinct from 'ros');
 
+-- A subconsulta de uma policy tambem respeita a RLS da tabela consultada: para
+-- o anon a campanha ROS some, o `not exists` da verdadeiro e o contato ROS
+-- ficaria liberado. Esta funcao le sem RLS e fecha esse caminho.
+create or replace function public.is_ros_campaign(p_campaign_id text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.client_campaigns c
+    where c.id = p_campaign_id and c.campaign_kind = 'ros'
+  );
+$$;
+revoke all on function public.is_ros_campaign(text) from public;
+grant execute on function public.is_ros_campaign(text) to anon, authenticated, service_role;
+
 drop policy if exists "recrutae_all_contacts" on client_contacts;
 create policy "recrutae_all_contacts"
   on client_contacts for all
   to anon, authenticated
-  using (
-    not exists (
-      select 1 from client_campaigns c
-      where c.id = client_contacts.campaign_id and c.campaign_kind = 'ros'
-    )
-  )
-  with check (
-    not exists (
-      select 1 from client_campaigns c
-      where c.id = client_contacts.campaign_id and c.campaign_kind = 'ros'
-    )
-  );
+  using (not public.is_ros_campaign(campaign_id))
+  with check (not public.is_ros_campaign(campaign_id));
 
 -- ------------------------------------------------------------
 -- Índices para performance

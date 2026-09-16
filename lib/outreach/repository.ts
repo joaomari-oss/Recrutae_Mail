@@ -143,8 +143,8 @@ export async function claimRosContact(db: SupabaseClient, campaignId: string, co
   if (data?.length === 1) return true
 
   // A retry can resume an uncertain post-send state only after the exact
-  // payload has been durably prepared. The Resend idempotency key then makes
-  // replay safe even if the first response was received before `sent` persisted.
+  // payload has been durably prepared. Inside Resend's idempotency window the
+  // replay is deduped; past it the attempt is renewed instead of replayed.
   const { data: existing, error: existingError } = await db.from('client_contacts')
     .select('id, status').eq('id', contactId).eq('campaign_id', campaignId).maybeSingle()
   check(existingError)
@@ -177,6 +177,19 @@ export async function getRosContactEmail(
   return data.email
 }
 
+/**
+ * Janela de idempotência do Resend. Depois dela a chave não agrupa mais nada,
+ * então congelar o payload deixa de proteger contra duplicata e passa a
+ * garantir que o texto velho seja reenviado.
+ */
+const ATTEMPT_RETENTION_MS = 24 * 60 * 60 * 1000
+
+function isAttemptExpired(createdAt: unknown): boolean {
+  if (typeof createdAt !== 'string') return false
+  const created = Date.parse(createdAt)
+  return Number.isFinite(created) && Date.now() - created > ATTEMPT_RETENTION_MS
+}
+
 export async function getOrCreateRosSendAttempt(
   db: SupabaseClient,
   campaignId: string,
@@ -192,10 +205,26 @@ export async function getOrCreateRosSendAttempt(
   if (contact.status !== 'sending') throw new OutreachError('O contato não está reservado para envio.', 409)
 
   const { data: existing, error: existingError } = await db.from('ros_send_attempts')
-    .select('payload, idempotency_key').eq('campaign_id', campaignId).eq('contact_id', contactId).maybeSingle()
+    .select('payload, idempotency_key, created_at').eq('campaign_id', campaignId).eq('contact_id', contactId).maybeSingle()
   check(existingError)
   const existingAttempt = mapRosSendAttempt(existing as Record<string, unknown> | null)
-  if (existingAttempt) return existingAttempt
+  if (existingAttempt && !isAttemptExpired((existing as Record<string, unknown> | null)?.created_at)) {
+    return existingAttempt
+  }
+
+  if (existingAttempt) {
+    // Fora da janela de retenção do Resend a chave antiga já não agrupa nada:
+    // repetir aqueles bytes enviaria de novo o texto velho e contaria como um
+    // e-mail novo. A tentativa é renovada com o conteúdo atual e chave própria.
+    const renewedKey = `${idempotencyKey}/r${Date.now()}`
+    const { data: renewed, error: renewError } = await db.from('ros_send_attempts')
+      .update({ payload, idempotency_key: renewedKey, updated_at: new Date().toISOString() })
+      .eq('campaign_id', campaignId).eq('contact_id', contactId)
+      .select('payload, idempotency_key')
+    check(renewError)
+    const renewedAttempt = mapRosSendAttempt((renewed?.[0] ?? null) as Record<string, unknown> | null)
+    if (renewedAttempt) return renewedAttempt
+  }
 
   const { data: stored, error: storeError } = await db.from('ros_send_attempts').upsert({
     campaign_id: campaignId,

@@ -39,6 +39,8 @@ export type RosSendDependencies = {
   createToken: (input: UnsubscribeTokenInput) => Promise<string>
   appBaseUrl: string
   logoUrl: string
+  /** Emblema circular do modelo de assinatura. */
+  emblemUrl?: string
 }
 
 export type RosSendResult =
@@ -132,6 +134,9 @@ export async function sendRosEmail(
       recruiterWhatsapp: request.recruiterWhatsapp,
       brand: 'ros',
       logoUrl: deps.logoUrl,
+      emblemUrl: deps.emblemUrl,
+      // A assinatura mostra o endereço de resposta: é para lá que o contato escreve.
+      recruiterEmail: request.replyTo || request.recruiterEmail,
       unsubscribeUrl: unsubscribeUrls.human,
     })
     const recruiterName = headerText(request.recruiterName, 'Recrutaê', 80)
@@ -166,7 +171,11 @@ export async function sendRosEmail(
       : { success: false, unavailable: true, error: 'Não foi possível preparar nem persistir a falha do envio.' }
   }
 
-  if (prepared.idempotencyKey !== idempotencyKey) {
+  // Passada a janela de retenção do Resend a tentativa é renovada com uma
+  // chave derivada; o que não pode é vir de outro contato ou campanha.
+  const keyBelongsToContact = prepared.idempotencyKey === idempotencyKey
+    || prepared.idempotencyKey.startsWith(`${idempotencyKey}/r`)
+  if (!keyBelongsToContact) {
     const message = 'A chave idempotente persistida não corresponde ao contato.'
     const persisted = await safelyMarkFailed(deps, request.contactId, message)
     return persisted
@@ -242,8 +251,9 @@ export async function sendRosEmail(
     await deps.markSent(request.contactId, result.data.id)
     return { success: true, messageId: result.data.id }
   } catch {
-    // Keep `sending` plus its durable payload. A later retry replays the exact
-    // same bytes under the same Resend key and can finish persistence safely.
+    // Keep `sending` plus its durable payload. Enquanto o Resend retém a chave,
+    // uma nova tentativa repete os mesmos bytes e é agrupada; passada a janela,
+    // a tentativa é renovada em vez de repetida.
     return { success: false, unavailable: true, error: 'E-mail aceito, mas o status não pôde ser persistido.' }
   }
 }

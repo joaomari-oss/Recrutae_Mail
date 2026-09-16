@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
     createToken: input => createUnsubscribeToken(input, unsubscribeSecret),
     appBaseUrl,
     logoUrl: new URL('/ros/recrutae-ros.png', appBaseUrl).toString(),
+    emblemUrl: new URL('/ros/ros-emblema.png', appBaseUrl).toString(),
   })
 
   if (result.success) return NextResponse.json(result)

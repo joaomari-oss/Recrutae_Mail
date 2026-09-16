@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { SendClientEmailRequest, SendClientEmailResponse } from '@/lib/clientTypes'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { supabase } from '@/lib/supabase'
 import { getLogoUrl } from '@/lib/getLogoUrl'
 import { renderOutreachEmail } from '@/lib/outreach/emailHtml'
 import { isEmailSuppressed } from '@/lib/outreach/repository'
 
-const db = supabaseAdmin ?? supabase
+// A supressao e server-only: a chave publica nao le a tabela, e uma consulta
+// que falha aberta devolveria e-mail a quem se descadastrou.
+const db = supabaseAdmin
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -46,7 +47,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
 
     // Supressão é global: quem se descadastrou de uma divulgação ROS também
     // não pode receber prospecção de Clientes.
-    if (db) {
+    if (!db) {
+      return NextResponse.json(
+        { success: false, error: 'SUPABASE_SERVICE_ROLE_KEY é obrigatória para consultar a supressão antes do envio.' },
+        { status: 503 },
+      )
+    }
+    {
       try {
         if (await isEmailSuppressed(db, to)) {
           return NextResponse.json(

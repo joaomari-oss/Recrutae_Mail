@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import { renderOutreachEmail, type OutreachEmailInput } from '@/lib/outreach/emailHtml'
 
-export type RosEmailPreviewProps = Omit<OutreachEmailInput, 'brand' | 'logoUrl'> & {
+export type RosEmailPreviewProps = Omit<OutreachEmailInput, 'brand' | 'logoUrl' | 'emblemUrl'> & {
   logoUrl?: string
+  emblemUrl?: string
   title?: string
 }
 
@@ -17,14 +18,21 @@ function resolvePreviewUrl(url: string): string {
 }
 
 /** Visual preview backed by the exact HTML sent by the ROS delivery route. */
-export function RosEmailPreview({ logoUrl = '/ros/recrutae-ros.png', title = 'Prévia do e-mail', ...input }: RosEmailPreviewProps) {
+export function RosEmailPreview({
+  logoUrl = '/ros/recrutae-ros.png',
+  emblemUrl = '/ros/ros-emblema.png',
+  title = 'Prévia do e-mail',
+  ...input
+}: RosEmailPreviewProps) {
   const [previewLogoUrl, setPreviewLogoUrl] = useState(logoUrl)
+  const [previewEmblemUrl, setPreviewEmblemUrl] = useState(emblemUrl)
 
   useEffect(() => {
     setPreviewLogoUrl(resolvePreviewUrl(logoUrl))
-  }, [logoUrl])
+    setPreviewEmblemUrl(resolvePreviewUrl(emblemUrl))
+  }, [logoUrl, emblemUrl])
 
-  const email = renderOutreachEmail({ ...input, brand: 'ros', logoUrl: previewLogoUrl })
+  const email = renderOutreachEmail({ ...input, brand: 'ros', logoUrl: previewLogoUrl, emblemUrl: previewEmblemUrl })
 
   return (
     <section aria-label={title} className="overflow-hidden rounded-lg border border-[#35334d] bg-[#0B0A18]">
