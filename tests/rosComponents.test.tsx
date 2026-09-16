@@ -582,3 +582,139 @@ describe('corridas e retentativa na composição', () => {
     await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/ros/review'))
   })
 })
+
+// ── Task 13: envio, resultados e histórico ─────────────────────────────
+
+describe('tela de envio ROS', () => {
+  async function seedForSending(contacts: RosContact[]) {
+    const { useRosStore } = await import('@/store/rosStore')
+    useRosStore.setState({ campaigns: [], activeCampaignId: null, contactsByCampaign: {}, campaignConfigById: {} })
+    useRosStore.getState().createCampaign('Divulgação', contacts, reviewConfig)
+    return useRosStore
+  }
+
+  const approved = (id: string, email: string) => rosContact({
+    id, email, fullName: id, firstName: id, status: 'approved',
+    generatedSubject: 'S', generatedBody: 'B', editedSubject: 'S', editedBody: 'B',
+  })
+
+  it('envia em sequência, segue após falha e conclui a campanha', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const sent: string[] = []
+    let finalized = false
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/ros/preflight')) {
+        return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [{ key: 'domain', status: 'ok', message: 'Domínio verificado.' }], fromEmail: 'contato@recrutae.com.br' }) } as Response
+      }
+      if (url.includes('/api/ros/campaigns')) return { ok: true, status: 200, json: async () => ({ contacts: [] }) } as Response
+      if (url.includes('/api/ros/finalize-campaign')) { finalized = true; return { ok: true, status: 200, json: async () => ({ success: true }) } as Response }
+      const body = JSON.parse(String(init?.body))
+      sent.push(body.contactId)
+      if (body.contactId === 'b') {
+        return { ok: false, status: 409, json: async () => ({ success: false, suppressed: true, error: 'suprimido' }) } as Response
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true, messageId: `msg-${body.contactId}` }) } as Response
+    }))
+
+    const store = await seedForSending([approved('a', 'a@example.com'), approved('b', 'b@example.com'), approved('c', 'c@example.com')])
+    const { default: Page } = await import('@/app/ros/sending/page')
+
+    render(<Page />)
+
+    const button = await screen.findByRole('button', { name: /enviar campanha/i })
+    await vi.waitFor(() => expect(button).toBeEnabled())
+    await user.click(button)
+
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/ros/sent'), { timeout: 20_000 })
+
+    expect(sent).toEqual(['a', 'b', 'c'])
+    expect(finalized).toBe(true)
+    const contacts = Object.values(store.getState().contactsByCampaign)[0]
+    expect(contacts.map((c) => c.status)).toEqual(['sent', 'failed', 'sent'])
+    expect(contacts[1].errorMessage).toContain('suprimido')
+  })
+
+  it('bloqueia o envio quando a verificação reprova', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+      const url = String(input)
+      if (url.includes('/api/ros/campaigns')) return { ok: true, status: 200, json: async () => ({ contacts: [] }) } as Response
+      return { ok: false, status: 503, json: async () => ({ canSend: false, fromEmail: 'contato@recrutae.com.br', checks: [{ key: 'unsubscribe', status: 'error', message: 'Segredo de descadastro ausente.' }] }) } as Response
+    }))
+
+    await seedForSending([approved('a', 'a@example.com')])
+    const { default: Page } = await import('@/app/ros/sending/page')
+
+    render(<Page />)
+
+    expect(await screen.findByText(/segredo de descadastro ausente/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /enviar campanha/i })).toBeDisabled()
+  })
+
+  it('reconcilia contatos presos em envio antes de liberar a fila', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+      const url = String(input)
+      if (url.includes('/api/ros/preflight')) {
+        return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Response
+      }
+      return {
+        ok: true, status: 200,
+        json: async () => ({ contacts: [
+          { id: 'a', status: 'sent', sentAt: '2026-09-16T10:00:00Z', messageId: 'm1' },
+          { id: 'b', status: 'approved' },
+        ] }),
+      } as Response
+    }))
+
+    const store = await seedForSending([
+      { ...approved('a', 'a@example.com'), status: 'sending' as const },
+      { ...approved('b', 'b@example.com'), status: 'sending' as const },
+    ])
+    const { default: Page } = await import('@/app/ros/sending/page')
+
+    render(<Page />)
+
+    await vi.waitFor(() => {
+      const contacts = Object.values(store.getState().contactsByCampaign)[0]
+      expect(contacts.map((c) => c.status)).toEqual(['sent', 'failed'])
+    })
+    // O que o servidor confirmou como enviado nunca volta para a fila.
+    expect(screen.getByRole('button', { name: /enviar campanha/i })).toBeEnabled()
+  })
+})
+
+describe('histórico ROS', () => {
+  it('lista somente campanhas ROS e exclui pela rota filtrada', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    let deletedId: string | null = null
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input)
+      if (init?.method === 'DELETE') {
+        deletedId = new URL(url, 'https://x').searchParams.get('campaignId')
+        return { ok: true, status: 200, json: async () => ({ success: true }) } as Response
+      }
+      return {
+        ok: true, status: 200,
+        json: async () => ({ campaigns: [{
+          id: 'ros-1', name: 'Divulgação setembro', status: 'completed', totalContacts: 3,
+          sentCount: 2, failedCount: 1, createdAt: '2026-09-15T12:00:00Z',
+          recruiterName: 'João', recruiterEmail: 'contato@recrutae.com.br',
+        }] }),
+      } as Response
+    }))
+
+    const { default: Page } = await import('@/app/ros/campaigns/page')
+
+    render(<Page />)
+
+    expect(await screen.findByText('Divulgação setembro')).toBeInTheDocument()
+    expect(screen.getByText('2 enviados')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /excluir campanha divulgação setembro/i }))
+
+    await vi.waitFor(() => expect(deletedId).toBe('ros-1'))
+  })
+})
