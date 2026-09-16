@@ -148,7 +148,10 @@
   }
 }
 
-/* ── Divulgação ROS: isolated ink-and-amber identity ── */
+/* ── Divulgação ROS: isolated ink-and-amber identity ──
+   Declared outside @layer base so it outranks :root and html.light for any
+   element inside the ROS wrapper. Every token :root defines is redeclared here
+   — otherwise light mode would leak cream-tuned values onto the ink surface. */
 .ros-theme {
   --ros-ink: 11 10 24;       /* #0B0A18 */
   --ros-raised: 22 21 44;    /* #16152C */
@@ -163,6 +166,8 @@
   --brand-coral: var(--ros-amber);
   --brand-orange: 255 202 44;
   --brand-warning: var(--ros-amber);
+  --brand-success: 78 203 141;
+  --brand-error: 232 93 93;
 
   --background: 252 42% 7%;
   --foreground: 40 21% 94%;
@@ -178,11 +183,68 @@
   --muted-foreground: 250 8% 70%;
   --accent: 251 24% 18%;
   --accent-foreground: 40 21% 94%;
+  --destructive: 0 72% 64%;
+  --destructive-foreground: 40 21% 94%;
   --border: 251 20% 23%;
   --input: 251 24% 18%;
   --ring: 44 100% 49%;
+  --radius: 0.625rem;
   color-scheme: dark;
   font-family: 'Poppins', sans-serif;
+}
+
+/* Headings and form controls match their element directly in @layer base, so
+   inheriting Poppins from the wrapper is not enough — they need their own rule. */
+.ros-theme h1,
+.ros-theme h2,
+.ros-theme h3,
+.ros-theme h4,
+.ros-theme h5,
+.ros-theme h6,
+.ros-theme button,
+.ros-theme input,
+.ros-theme select,
+.ros-theme textarea {
+  font-family: 'Poppins', sans-serif;
+}
+
+/* JetBrains Mono stays reserved for labels, numbers and raw data. */
+.ros-theme .font-mono,
+.ros-theme code,
+.ros-theme pre {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ROS is dark-only by design. The light-mode overlay inversions below use
+   !important, so they are neutralised with a higher-specificity counterpart. */
+html.light .ros-theme .bg-white\/5               { background-color: rgba(255,255,255,0.05)  !important; }
+html.light .ros-theme .bg-white\/\[0\.04\]       { background-color: rgba(255,255,255,0.04)  !important; }
+html.light .ros-theme .bg-white\/\[0\.06\]       { background-color: rgba(255,255,255,0.06)  !important; }
+html.light .ros-theme .bg-white\/\[0\.07\]       { background-color: rgba(255,255,255,0.07)  !important; }
+html.light .ros-theme .bg-white\/\[0\.08\]       { background-color: rgba(255,255,255,0.08)  !important; }
+html.light .ros-theme .bg-white\/4               { background-color: rgba(255,255,255,0.04)  !important; }
+html.light .ros-theme .bg-white\/3               { background-color: rgba(255,255,255,0.03)  !important; }
+html.light .ros-theme .bg-white\/2               { background-color: rgba(255,255,255,0.02)  !important; }
+html.light .ros-theme .hover\:bg-white\/4:hover  { background-color: rgba(255,255,255,0.04)  !important; }
+html.light .ros-theme .hover\:bg-white\/3:hover  { background-color: rgba(255,255,255,0.03)  !important; }
+html.light .ros-theme .hover\:bg-white\/2:hover  { background-color: rgba(255,255,255,0.02)  !important; }
+html.light .ros-theme .border-white\/\[0\.045\]  { border-color: rgba(255,255,255,0.045) !important; }
+html.light .ros-theme .border-white\/\[0\.06\]   { border-color: rgba(255,255,255,0.06)  !important; }
+html.light .ros-theme .border-white\/\[0\.08\]   { border-color: rgba(255,255,255,0.08)  !important; }
+html.light .ros-theme .border-white\/5           { border-color: rgba(255,255,255,0.05)  !important; }
+html.light .ros-theme .border-white\/6           { border-color: rgba(255,255,255,0.06)  !important; }
+html.light .ros-theme .border-white\/8           { border-color: rgba(255,255,255,0.08)  !important; }
+html.light .ros-theme .border-white\/10          { border-color: rgba(255,255,255,0.10)  !important; }
+html.light .ros-theme .via-white\/8              { --tw-gradient-via: rgba(255,255,255,0.08) var(--tw-gradient-via-position) !important; }
+html.light .ros-theme .via-white\/\[0\.07\]      { --tw-gradient-via: rgba(255,255,255,0.07) var(--tw-gradient-via-position) !important; }
+html.light .ros-theme .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.03) 25%,
+    rgba(255,255,255,0.07) 50%,
+    rgba(255,255,255,0.03) 75%
+  ) !important;
+  background-size: 200% 100%;
 }
 
 /* ── Animation Keyframes ── */

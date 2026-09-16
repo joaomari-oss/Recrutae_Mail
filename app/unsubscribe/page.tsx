@@ -28,19 +28,19 @@ export default async function UnsubscribePage({ searchParams }: UnsubscribePageP
     <main className="min-h-screen bg-[#0B0A18] px-4 py-12 text-[#F4F2ED] flex items-center justify-center">
       <section className="w-full max-w-md rounded-2xl border border-white/10 bg-[#16152C] p-8 shadow-2xl animate-fade-up" style={{ animationFillMode: 'forwards' }}>
         <div className="mb-7 flex justify-center">
-          <Image src="/brand/recrutae-ros.png" alt="Recrutaê OS" width={46} height={46} priority />
+          <Image src="/ros/recrutae-ros.png" alt="Recrutaê OS" width={46} height={46} priority />
         </div>
 
         {email && status === 'success' ? (
           <>
-            <h1 className="font-display text-3xl font-semibold">Descadastro concluído</h1>
+            <h1 className="font-ros text-3xl font-semibold">Descadastro concluído</h1>
             <p className="mt-3 text-sm leading-6 text-[#F4F2ED]/70">
               {email} não receberá novas divulgações do Recrutaê | OS.
             </p>
           </>
         ) : email ? (
           <>
-            <h1 className="font-display text-3xl font-semibold">{status === 'error' ? 'Não foi possível concluir' : 'Confirmar descadastro'}</h1>
+            <h1 className="font-ros text-3xl font-semibold">{status === 'error' ? 'Não foi possível concluir' : 'Confirmar descadastro'}</h1>
             <p className="mt-3 text-sm leading-6 text-[#F4F2ED]/70">
               {status === 'error'
                 ? 'Houve uma falha temporária. Você pode tentar novamente abaixo.'
@@ -56,7 +56,7 @@ export default async function UnsubscribePage({ searchParams }: UnsubscribePageP
           </>
         ) : (
           <>
-            <h1 className="font-display text-3xl font-semibold">Link inválido</h1>
+            <h1 className="font-ros text-3xl font-semibold">Link inválido</h1>
             <p className="mt-3 text-sm leading-6 text-[#F4F2ED]/70">Este link de descadastro é inválido ou expirou. Solicite um novo link no e-mail recebido.</p>
           </>
         )}

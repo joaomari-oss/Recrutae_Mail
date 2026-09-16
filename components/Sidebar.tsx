@@ -12,6 +12,7 @@ import {
   Users, PenLine, MailCheck, BarChart3,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isRosPath } from '@/lib/ros/routes'
 import { getSessionId } from '@/lib/session'
 import { useTheme } from '@/lib/theme'
 import { useAppStore } from '@/store'
@@ -69,7 +70,7 @@ export function Sidebar() {
   const [loggingOut, setLoggingOut] = useState(false)
 
   const isClientMode = pathname.startsWith('/clients')
-  const isRosMode    = pathname.startsWith('/ros')
+  const isRosMode    = isRosPath(pathname)
   const navItems     = isRosMode ? rosNavItems : isClientMode ? clientNavItems : candidateNavItems
   const bottomItems  = isRosMode ? rosBottomItems : isClientMode ? clientBottomItems : candidateBottomItems
   const { theme, toggleTheme } = useTheme()
@@ -114,7 +115,7 @@ export function Sidebar() {
         )}
       >
         {isActive && (
-          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-brand-coral rounded-r-full shadow-[0_0_8px_rgba(242,201,76,0.5)]" />
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-brand-coral rounded-r-full shadow-[0_0_8px_rgb(var(--brand-coral)/0.5)]" />
         )}
         <div className={cn(
           'flex items-center justify-center rounded-lg transition-all duration-200 flex-shrink-0',
@@ -139,7 +140,7 @@ export function Sidebar() {
         {badge != null && badge > 0 && (
           <span className={cn(
             'flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center',
-            'bg-brand-coral text-white shadow-[0_0_8px_rgba(242,106,79,0.5)]',
+            'bg-brand-coral text-white shadow-[0_0_8px_rgb(var(--brand-coral)/0.5)]',
             collapsed && 'absolute top-1 right-1 min-w-[14px] h-[14px] text-[8px]'
           )}>
             {badge > 99 ? '99+' : badge}
@@ -170,23 +171,19 @@ export function Sidebar() {
         'flex items-center h-[60px] border-b border-white/[0.045] transition-all duration-300',
         collapsed ? 'justify-center px-2' : 'px-4 gap-3'
       )}>
-        <Link href="/" aria-label={isRosMode ? 'ROS' : 'Recrutaê'} className="flex items-center justify-center flex-shrink-0 group">
+        <Link href="/" aria-label="Recrutaê — escolher modo" className="flex items-center justify-center flex-shrink-0 group">
           <div className={cn(
             'rounded-xl border border-white/8 bg-brand-charcoal flex items-center justify-center transition-all duration-300 group-hover:border-brand-coral/20',
             collapsed ? 'w-9 h-9' : 'w-8 h-8'
           )}>
-            {isRosMode ? (
-              <span aria-hidden className="font-ros text-[17px] font-bold tracking-[-0.12em] text-brand-coral pr-0.5">R</span>
-            ) : (
-              <Image
-                src="/recrutae.webp"
-                alt="Recrutaê"
-                width={collapsed ? 20 : 18}
-                height={collapsed ? 20 : 18}
-                className="object-contain"
-                priority
-              />
-            )}
+            <Image
+              src={isRosMode ? '/ros/recrutae-ros.png' : '/recrutae.webp'}
+              alt={isRosMode ? 'Recrutaê OS' : 'Recrutaê'}
+              width={collapsed ? 20 : 18}
+              height={collapsed ? 20 : 18}
+              className="object-contain"
+              priority
+            />
           </div>
         </Link>
         {!collapsed && (
@@ -292,7 +289,9 @@ export function Sidebar() {
           )}
         </button>
 
-        {/* Theme toggle */}
+        {/* Theme toggle — ROS is dark-only, so the control is hidden there
+            instead of sitting inert next to the ink surface. */}
+        {!isRosMode && (
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
@@ -322,6 +321,7 @@ export function Sidebar() {
             </div>
           )}
         </button>
+        )}
 
         <button
           onClick={() => setCollapsed(!collapsed)}

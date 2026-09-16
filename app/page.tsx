@@ -150,7 +150,7 @@ export default function LandingPage() {
               'bg-[#16152C] border border-[#FBB900]/25',
               'hover:border-[#FBB900]/60 transition-all duration-300',
               'hover:shadow-[0_20px_60px_rgba(0,0,0,0.5),0_0_0_1px_rgba(251,185,0,0.16)]',
-              'hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FBB900] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0B0A18]',
+              'hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FBB900] focus-visible:ring-offset-2 focus-visible:ring-offset-brand-dark',
               'p-6'
             )}
           >
@@ -158,8 +158,8 @@ export default function LandingPage() {
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#FBB900]/50 to-transparent" />
 
             <div className="flex items-start justify-between mb-5">
-              <div className="w-10 h-10 rounded-xl bg-[#FBB900] text-[#0B0A18] flex items-center justify-center shadow-[0_6px_18px_rgba(251,185,0,0.2)]">
-                <span aria-hidden className="font-ros text-lg font-bold tracking-[-0.12em] pr-0.5">R</span>
+              <div className="w-10 h-10 rounded-xl bg-[#FBB900]/12 border border-[#FBB900]/30 flex items-center justify-center shadow-[0_6px_18px_rgba(251,185,0,0.12)]">
+                <Image src="/ros/recrutae-ros.png" alt="" aria-hidden width={22} height={22} className="object-contain" />
               </div>
               <div className="w-7 h-7 rounded-lg bg-[#FBB900]/10 flex items-center justify-center group-hover:bg-[#FBB900]/20 transition-colors duration-200">
                 <ArrowUpRight className="h-3.5 w-3.5 text-[#FBB900] transition-colors" />

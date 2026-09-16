@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { Sidebar } from '@/components/Sidebar'
 import { validateStoreIntegrity, cleanupOldCampaigns } from '@/lib/integrity'
 import { useAppStore } from '@/store'
+import { isRosPath } from '@/lib/ros/routes'
 
 function StoreInitializer() {
   useEffect(() => {
@@ -52,10 +53,24 @@ function EmailOpenPoller() {
 // Pages that render full-screen without the sidebar
 const NO_SIDEBAR_PATHS = ['/login', '/', '/unsubscribe']
 
+/**
+ * Radix dialogs and the sonner toaster mount into `document.body`, outside the
+ * ROS wrapper, so the tokens have to reach the body for portals to be themed.
+ */
+function useRosBodyTheme(active: boolean) {
+  useEffect(() => {
+    if (!active) return
+    document.body.classList.add('ros-theme')
+    return () => document.body.classList.remove('ros-theme')
+  }, [active])
+}
+
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isHomePage = NO_SIDEBAR_PATHS.includes(pathname)
-  const isRosMode = pathname.startsWith('/ros')
+  const isRosMode = isRosPath(pathname)
+
+  useRosBodyTheme(isRosMode)
 
   if (isHomePage) {
     return (

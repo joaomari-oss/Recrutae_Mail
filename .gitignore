@@ -5,3 +5,5 @@ tsconfig.tsbuildinfo
 .env.local
 .env*.local
 .worktrees/
+
+.impeccable/
