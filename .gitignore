@@ -7,3 +7,6 @@ tsconfig.tsbuildinfo
 .worktrees/
 
 .impeccable/
+.vercel
+.env*.local
+.playwright-mcp/
