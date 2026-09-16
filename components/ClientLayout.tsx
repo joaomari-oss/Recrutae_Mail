@@ -50,7 +50,7 @@ function EmailOpenPoller() {
 }
 
 // Pages that render full-screen without the sidebar
-const NO_SIDEBAR_PATHS = ['/login', '/']
+const NO_SIDEBAR_PATHS = ['/login', '/', '/unsubscribe']
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

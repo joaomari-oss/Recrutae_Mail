@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { timingSafeEqual } from 'node:crypto'
+import { normalizeSuppressionEmail } from '@/lib/outreach/unsubscribe'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
 /**
@@ -28,11 +30,33 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   'email.delivered': 'delivered',
 }
 
+function hasMatchingSecret(provided: string | null, expected: string): boolean {
+  if (!provided) return false
+  const providedBytes = new TextEncoder().encode(provided)
+  const expectedBytes = new TextEncoder().encode(expected)
+  if (providedBytes.byteLength !== expectedBytes.byteLength) return false
+  return timingSafeEqual(providedBytes, expectedBytes)
+}
+
+function recipientFrom(to: unknown): string | null {
+  const candidate = Array.isArray(to) ? to[0] : typeof to === 'string' ? to : null
+  if (typeof candidate !== 'string') return null
+  try {
+    return normalizeSuppressionEmail(candidate)
+  } catch {
+    return null
+  }
+}
+
 export async function POST(req: NextRequest) {
-  // Security: verify secret token passed as query param
+  // The secret is deliberately mandatory: accepting an unsigned webhook would
+  // let third parties globally suppress addresses or forge engagement events.
   const secret = req.nextUrl.searchParams.get('secret')
   const expectedSecret = process.env.RESEND_WEBHOOK_SECRET
-  if (expectedSecret && secret !== expectedSecret) {
+  if (!expectedSecret) {
+    return NextResponse.json({ error: 'Webhook temporariamente indisponível.' }, { status: 503 })
+  }
+  if (!hasMatchingSecret(secret, expectedSecret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -57,7 +81,7 @@ export async function POST(req: NextRequest) {
   const { email_id, to, tags } = payload.data ?? {}
   const campaignId     = tags?.campaign_id ?? null
   const contactId      = tags?.contact_id ?? null
-  const recipientEmail = Array.isArray(to) && to.length > 0 ? to[0] : null
+  const recipientEmail = recipientFrom(to)
   const eventType      = EVENT_TYPE_MAP[payload.type] ?? payload.type
 
   if (!email_id) {
@@ -65,9 +89,39 @@ export async function POST(req: NextRequest) {
   }
 
   if (!supabaseAdmin) {
-    console.warn('[webhook] supabaseAdmin not configured, event dropped:', email_id)
-    return NextResponse.json({ ok: true })
+    console.error('[webhook] supabaseAdmin not configured; returning retryable failure:', email_id)
+    return NextResponse.json({ error: 'Webhook temporariamente indisponível.' }, { status: 503 })
   }
+
+  if ((eventType === 'bounced' || eventType === 'complained') && !recipientEmail) {
+    return NextResponse.json({ error: 'Missing valid recipient email' }, { status: 400 })
+  }
+
+  if (eventType === 'bounced' || eventType === 'complained') {
+    const { error: suppressionError } = await supabaseAdmin.from('email_suppressions').upsert({
+      email: recipientEmail!,
+      reason: eventType === 'bounced' ? 'bounce' : 'complaint',
+      source: 'resend_webhook',
+      message_id: email_id,
+    }, { onConflict: 'email' })
+
+    if (suppressionError) {
+      console.error('[webhook] Failed to store email suppression:', suppressionError.message)
+      return NextResponse.json({ error: 'Suppression persistence failed' }, { status: 503 })
+    }
+  }
+
+  // Resend retries deliveries when a 2xx response is lost. Avoid counting a
+  // retried event twice while keeping the response successful and idempotent.
+  const { data: existingEvent, error: existingEventError } = await supabaseAdmin.from('email_events')
+    .select('id').eq('message_id', email_id).eq('event_type', eventType).maybeSingle()
+
+  if (existingEventError) {
+    console.error('[webhook] Failed to check existing email event:', existingEventError.message)
+    return NextResponse.json({ error: 'Event lookup failed' }, { status: 503 })
+  }
+
+  if (existingEvent) return NextResponse.json({ ok: true, replay: true })
 
   const { error } = await supabaseAdmin.from('email_events').insert({
     message_id:      email_id,

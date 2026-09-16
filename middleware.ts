@@ -4,7 +4,7 @@ import { jwtVerify } from 'jose'
 const AUTH_COOKIE = 'recrutae-auth'
 
 // Paths that don't require authentication
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/logout']
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/logout', '/unsubscribe', '/api/unsubscribe', '/api/webhooks/resend']
 
 // Static asset extensions to skip entirely
 const STATIC_EXT = /\.(ico|webp|png|jpg|jpeg|svg|gif|css|js|woff2?)$/
@@ -65,6 +65,7 @@ export async function middleware(req: NextRequest) {
     if (origin) {
       const allowed = [
         process.env.NEXT_PUBLIC_APP_URL,
+        process.env.APP_BASE_URL,
         'http://localhost:3000',
         'http://localhost:3001',
       ].filter(Boolean) as string[]
