@@ -4,6 +4,7 @@ import { SendClientEmailRequest, SendClientEmailResponse } from '@/lib/clientTyp
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { supabase } from '@/lib/supabase'
 import { getLogoUrl } from '@/lib/getLogoUrl'
+import { renderOutreachEmail } from '@/lib/outreach/emailHtml'
 
 const db = supabaseAdmin ?? supabase
 
@@ -11,98 +12,6 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 // In-memory idempotency registry: campaignId+contactEmail → messageId
 const sentRegistry = new Map<string, string>()
-
-const FONT = `'Helvetica Neue', Helvetica, Arial, sans-serif`
-
-function buildHtml(
-  body: string,
-  recruiterName: string,
-  recruiterRole: string,
-  recruiterEmail: string,
-): string {
-  const escapeHtml = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
-  const htmlBody = body.split('\n').map((line) => {
-    const safe = escapeHtml(line)
-    const trimmed = safe.trim()
-    if (trimmed === '') return `<p style="margin:0 0 8px 0;font-family:${FONT};">&nbsp;</p>`
-    const linked = trimmed.replace(
-      /(https?:\/\/[^\s<]+)/g,
-      `<a href="$1" style="color:#E8603A;font-family:${FONT};text-decoration:underline;font-weight:500;">$1</a>`
-    )
-    return `<p style="margin:0 0 16px 0;font-family:${FONT};font-size:15px;line-height:1.75;color:#1a1a2e;">${linked}</p>`
-  }).join('')
-
-  const logoSrc = getLogoUrl()
-  const safeName = escapeHtml(recruiterName || 'Recrutaê')
-  const safeRole = escapeHtml(recruiterRole || '')
-
-  const logoBlock = logoSrc
-    ? `<img src="${logoSrc}" alt="Recrutaê" width="100" height="auto" style="display:block;border:0;width:100px;max-width:100px;" />`
-    : `<p style="margin:0;font-family:${FONT};font-size:16px;font-weight:700;color:#1a1a2e;">Recrutaê</p>`
-
-  const signatureHtml = `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:32px;">
-  <tr>
-    <td style="border-top:1px solid #e5e5ea;padding-top:24px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td style="padding-right:20px;vertical-align:middle;background-color:#ffffff;border-radius:8px;padding:8px 16px 8px 8px;">${logoBlock}</td>
-          <td style="border-left:3px solid #F5A623;padding-left:16px;vertical-align:middle;">
-            <p style="margin:0;font-family:${FONT};font-size:15px;font-weight:700;color:#1a1a2e;line-height:1.3;">${safeName}</p>
-            ${safeRole ? `<p style="margin:3px 0 0 0;font-family:${FONT};font-size:13px;color:#6b7280;line-height:1.4;">${safeRole}</p>` : ''}
-            <p style="margin:6px 0 0 0;font-family:${FONT};font-size:11px;font-weight:700;color:#F5A623;letter-spacing:1px;text-transform:uppercase;">Recrutaê</p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`
-
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="x-apple-disable-message-reformatting" />
-<!--[if !mso]><!-->
-<meta http-equiv="X-UA-Compatible" content="IE=edge" />
-<!--<![endif]-->
-</head>
-<body style="margin:0;padding:0;background-color:#f5f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f5f5f7;">
-  <tr>
-    <td style="padding:32px 16px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:600px;margin:0 auto;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-        <tr><td style="background-color:#1a1a2e;padding:0;height:4px;"></td></tr>
-        <tr>
-          <td style="padding:36px 40px 32px;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-              <tr>
-                <td style="font-family:${FONT};font-size:15px;line-height:1.75;color:#1a1a2e;">
-                  ${htmlBody}
-                  ${signatureHtml}
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="background-color:#f9f9fb;border-top:1px solid #e5e5ea;padding:16px 40px;">
-            <p style="margin:0;font-family:${FONT};font-size:11px;color:#9ca3af;line-height:1.5;text-align:center;">
-              Você recebeu este email pois seu perfil foi identificado como relevante.<br />
-              Para não receber mais emails, responda com "cancelar".
-            </p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
-</body>
-</html>`
-}
 
 function sanitizeName(name: string): string {
   return name.replace(/[<>"']/g, '').trim().slice(0, 80)
@@ -139,12 +48,22 @@ export async function POST(request: NextRequest): Promise<NextResponse<SendClien
     const fromAddress = `${safeName} <${recruiterEmail}>`
     const effectiveReplyTo = replyTo?.trim() || recruiterEmail
 
+    const renderedEmail = renderOutreachEmail({
+      body: emailBody,
+      recruiterName: safeName,
+      recruiterRole: safeRole,
+      recruiterLinkedin: '',
+      recruiterWhatsapp: '',
+      brand: 'clients',
+      logoUrl: getLogoUrl(),
+    })
+
     const result = await resend.emails.send({
       from: fromAddress,
       to: [to],
       subject,
-      html: buildHtml(emailBody, safeName, safeRole, recruiterEmail),
-      text: emailBody,
+      html: renderedEmail.html,
+      text: renderedEmail.text,
       reply_to: effectiveReplyTo,
       tags: [
         ...(campaignId ? [{ name: 'campaign_id', value: campaignId }] : []),
