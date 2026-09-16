@@ -66,7 +66,14 @@ try {
   )
 
   // A partir daqui, tudo como se fosse a chave pública do navegador.
-  await client.query('set local role anon')
+  // `set role`, não `set local role`: fora de uma transação o LOCAL não tem
+  // efeito e as consultas seguiriam rodando como owner, que ignora RLS —
+  // o teste passaria sem testar nada.
+  await client.query('set role anon')
+  const who = await client.query('select current_user')
+  if (who.rows[0].current_user !== 'anon') {
+    throw new Error(`troca de papel falhou: current_user = ${who.rows[0].current_user}`)
+  }
 
   const seesRosCampaign = await client.query('select 1 from client_campaigns where id = $1', [rosId])
   check('anon não lê campanha ROS', seesRosCampaign.rowCount === 0, `${seesRosCampaign.rowCount} linha(s)`)
