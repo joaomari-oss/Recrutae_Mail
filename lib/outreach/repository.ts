@@ -4,6 +4,22 @@ import type { RosCampaign, RosCampaignConfig, RosContact } from '@/lib/rosTypes'
 export const sendableStatuses = ['approved', 'failed'] as const
 type CampaignInput = Pick<RosCampaign, 'id' | 'name' | 'status' | 'totalContacts'>
 
+// Campaign saves can arrive from multiple browser tabs. Status is monotonic:
+// a later lifecycle state may be persisted, but a stale draft cannot reopen a
+// campaign that is generating, ready, sending or completed.
+const campaignStatusRank: Record<RosCampaign['status'], number> = {
+  draft: 0,
+  generating: 1,
+  ready: 2,
+  sending: 3,
+  completed: 4,
+}
+
+function canPersistCampaignStatus(current: unknown, next: RosCampaign['status']): boolean {
+  if (typeof current !== 'string' || !(current in campaignStatusRank)) return false
+  return campaignStatusRank[next] >= campaignStatusRank[current as RosCampaign['status']]
+}
+
 export class OutreachError extends Error {
   constructor(message: string, public readonly status = 500) { super(message) }
 }
@@ -68,8 +84,7 @@ export async function saveRosCampaign(db: SupabaseClient, campaign: CampaignInpu
 
   const row = mapRosCampaignRow({ ...campaign, totalContacts: contacts.length }, config)
   if (existing.data) {
-    // Saving a draft from another tab cannot reopen an in-progress/completed campaign.
-    delete row.status
+    if (!canPersistCampaignStatus(existing.data.status, campaign.status)) delete row.status
     const { error } = await db.from('client_campaigns').update(row)
       .eq('id', campaign.id).eq('campaign_kind', 'ros')
     check(error)
@@ -100,6 +115,29 @@ export async function claimRosContact(db: SupabaseClient, campaignId: string, co
   if (!await getRosCampaign(db, campaignId)) return false
   const { data, error } = await db.from('client_contacts').update({ status: 'sending', error_message: null })
     .eq('id', contactId).eq('campaign_id', campaignId).in('status', [...sendableStatuses]).select('id')
+  check(error)
+  return data?.length === 1
+}
+
+export async function persistRosGeneratedEmail(
+  db: SupabaseClient | null,
+  campaignId: unknown,
+  contactId: unknown,
+  subject: string,
+  body: string,
+): Promise<boolean> {
+  if (!db || typeof campaignId !== 'string' || !campaignId.trim() || typeof contactId !== 'string' || !contactId.trim()) {
+    return false
+  }
+  if (!await getRosCampaign(db, campaignId)) return false
+  const { data, error } = await db.from('client_contacts').update({
+    status: 'ready',
+    generated_subject: subject,
+    generated_body: body,
+    edited_subject: subject,
+    edited_body: body,
+  }).eq('id', contactId).eq('campaign_id', campaignId)
+    .in('status', ['pending', 'generating', 'ready']).select('id')
   check(error)
   return data?.length === 1
 }
@@ -157,18 +195,35 @@ export async function finalizeRosCampaign(db: SupabaseClient, campaignId: string
   return { sentCount, failedCount }
 }
 
+type RosContactEventSummary = {
+  contactId: string
+  opened: boolean
+  clicked: boolean
+  openedAt?: string
+  clickedAt?: string
+}
+
 export async function getRosEvents(db: SupabaseClient, campaignId: string) {
   await requireRosCampaign(db, campaignId)
-  const { data, error } = await db.from('email_events').select('contact_id, event_type, received_at')
-    .eq('campaign_id', campaignId).in('event_type', ['opened', 'clicked']).order('received_at', { ascending: true })
-  check(error)
-  const contactMap = new Map<string, { contactId: string; opened: boolean; clicked: boolean; openedAt?: string; clickedAt?: string }>()
-  for (const row of data ?? []) {
-    if (!row.contact_id) continue
-    const entry = contactMap.get(row.contact_id) ?? { contactId: row.contact_id, opened: false, clicked: false }
-    if (row.event_type === 'opened' && !entry.opened) { entry.opened = true; entry.openedAt = row.received_at }
-    if (row.event_type === 'clicked' && !entry.clicked) { entry.clicked = true; entry.clickedAt = row.received_at }
-    contactMap.set(row.contact_id, entry)
+  const contactMap = new Map<string, RosContactEventSummary>()
+
+  // PostgREST applies a row cap. Paginate with a deterministic tie-breaker so
+  // events sharing a timestamp are neither skipped nor double-counted.
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await db.from('email_events').select('id, contact_id, event_type, received_at')
+      .eq('campaign_id', campaignId).in('event_type', ['opened', 'clicked'])
+      .order('received_at', { ascending: true }).order('id', { ascending: true }).range(offset, offset + 999)
+    check(error)
+    for (const row of data ?? []) {
+      if (!row.contact_id) continue
+      const entry: RosContactEventSummary = contactMap.get(row.contact_id) ?? {
+        contactId: row.contact_id, opened: false, clicked: false,
+      }
+      if (row.event_type === 'opened' && !entry.opened) { entry.opened = true; entry.openedAt = row.received_at }
+      if (row.event_type === 'clicked' && !entry.clicked) { entry.clicked = true; entry.clickedAt = row.received_at }
+      contactMap.set(row.contact_id, entry)
+    }
+    if ((data?.length ?? 0) < 1000) break
   }
   const contacts = Array.from(contactMap.values())
   return { campaignId, totalOpened: contacts.filter(c => c.opened).length, totalClicked: contacts.filter(c => c.clicked).length, contacts }

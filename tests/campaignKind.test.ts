@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
 import {
   claimRosContact, finalizeRosCampaign, getRosEvents, isEmailSuppressed,
-  mapRosCampaignRow, markContactFailed, markContactSent, saveRosCampaign, sendableStatuses,
+  mapRosCampaignRow, markContactFailed, markContactSent, persistRosGeneratedEmail, saveRosCampaign, sendableStatuses,
 } from '@/lib/outreach/repository'
 import type { RosCampaignConfig, RosContact } from '@/lib/rosTypes'
 
@@ -111,6 +111,26 @@ describe('persistência ROS', () => {
     expect(update.body.status).toBeUndefined()
   })
 
+  it('permite a progressão persistida de campanha de draft para ready', async () => {
+    const { db, requests } = database([
+      { id: 'camp-1', campaign_kind: 'ros', status: 'draft' }, [], [], [],
+    ])
+    await saveRosCampaign(db, { ...campaign, status: 'ready' }, config, [contact])
+    const update = requests.find(r => r.method === 'PATCH' && r.url.pathname.endsWith('client_campaigns'))!
+    expect(update.body.status).toBe('ready')
+  })
+
+  it('não regride campanha sending ou completed para draft em salvamento antigo', async () => {
+    for (const status of ['sending', 'completed']) {
+      const { db, requests } = database([
+        { id: 'camp-1', campaign_kind: 'ros', status }, [], [], [],
+      ])
+      await saveRosCampaign(db, campaign, config, [contact])
+      const update = requests.find(r => r.method === 'PATCH' && r.url.pathname.endsWith('client_campaigns'))!
+      expect(update.body.status).toBeUndefined()
+    }
+  })
+
   it('recusa contatos pertencentes a outra campanha antes de qualquer escrita', async () => {
     const { db, requests } = database([null, [{ id: 'person-1', campaign_id: 'other', status: 'pending' }]])
     await expect(saveRosCampaign(db, campaign, config, [contact])).rejects.toThrow()
@@ -139,6 +159,36 @@ describe('persistência ROS', () => {
     expect(await getRosEvents(db, 'camp-1')).toEqual({ campaignId: 'camp-1', totalOpened: 1, totalClicked: 1,
       contacts: [{ contactId: 'person-1', opened: true, clicked: true, openedAt: '2026-09-01', clickedAt: '2026-09-03' }] })
     await expect(getRosEvents(database([null]).db, 'clients-1')).rejects.toThrow()
+  })
+
+  it('pagina eventos com ordenação estável para incluir evento após a primeira página', async () => {
+    const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+      id: `event-${index}`, contact_id: `person-${index}`, event_type: 'opened', received_at: '2026-09-01',
+    }))
+    const { db, requests } = database([{ id: 'camp-1' }, firstPage, [
+      { id: 'event-late', contact_id: 'person-late', event_type: 'clicked', received_at: '2026-09-02' },
+    ]])
+    const summary = await getRosEvents(db, 'camp-1')
+    expect(summary.totalOpened).toBe(1000)
+    expect(summary.totalClicked).toBe(1)
+    expect(summary.contacts).toContainEqual(expect.objectContaining({ contactId: 'person-late', clicked: true }))
+    expect(requests[1].url.searchParams.get('order')).toBe('received_at.asc,id.asc')
+    expect(requests[2].url.searchParams.get('offset')).toBe('1000')
+  })
+
+  it('persiste geração apenas para campanha ROS e contatos que não estão sent ou sending', async () => {
+    const wrongKind = database([null])
+    expect(await persistRosGeneratedEmail(wrongKind.db, 'clients-1', 'person-1', 'Assunto', 'Corpo')).toBe(false)
+    expect(wrongKind.requests).toHaveLength(1)
+
+    const { db, requests } = database([{ id: 'camp-1' }, [{ id: 'person-1' }]])
+    expect(await persistRosGeneratedEmail(db, 'camp-1', 'person-1', 'Assunto', 'Corpo')).toBe(true)
+    expect(requests[1].url.searchParams.get('status')).toBe('in.(pending,generating,ready)')
+    expect(requests[1].body.status).toBe('ready')
+
+    const terminal = database([{ id: 'camp-1' }, []])
+    expect(await persistRosGeneratedEmail(terminal.db, 'camp-1', 'person-1', 'Assunto', 'Corpo')).toBe(false)
+    expect(terminal.requests[1].url.searchParams.get('status')).toBe('in.(pending,generating,ready)')
   })
 
   it('grava resultado somente de contatos ROS em envio e não regride sent para failed', async () => {
