@@ -367,3 +367,162 @@ describe('composição da campanha ROS', () => {
     expect(sessionStorage.getItem('ros-pending-contacts')).toBeNull()
   })
 })
+
+// ── Task 12: revisão, edição e aprovação ───────────────────────────────
+
+const reviewConfig = {
+  recruiterName: 'João Mari', recruiterRole: 'Comercial', recruiterEmail: 'contato@recrutae.com.br',
+  replyTo: 'contato@recrutae.com.br', recruiterLinkedin: '', recruiterWhatsapp: '',
+  subjectTemplate: 'Conheça o ROS', emailTemplate: 'Olá, {{nome}}!',
+  varySubject: false, variationPercent: 6 as const,
+}
+
+const readyContact = rosContact({
+  id: 'c1', email: 'ana@example.com', fullName: 'Ana Souza', firstName: 'Ana', lastName: 'Souza',
+  company: 'Acme', position: 'Head de RH', status: 'ready',
+  generatedSubject: 'Conheça o ROS', generatedBody: 'Olá, Ana!',
+  editedSubject: 'Conheça o ROS', editedBody: 'Olá, Ana!',
+})
+
+describe('editor de e-mail ROS', () => {
+  it('aprova o contato selecionado', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const { RosEmailEditor } = await import('@/components/ros/RosEmailEditor')
+    const onApprove = vi.fn()
+
+    render(<RosEmailEditor contact={readyContact} config={reviewConfig} onSave={vi.fn()}
+      onApprove={onApprove} onRegenerate={vi.fn()} onSkip={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: 'Aprovar' }))
+
+    expect(onApprove).toHaveBeenCalledWith('c1')
+  })
+
+  it('salva a edição uma vez só, depois que o usuário para de digitar', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const { RosEmailEditor } = await import('@/components/ros/RosEmailEditor')
+    const onSave = vi.fn()
+
+    render(<RosEmailEditor contact={readyContact} config={reviewConfig} onSave={onSave}
+      onApprove={vi.fn()} onRegenerate={vi.fn()} onSkip={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('Assunto'), ' agora')
+    // Nada é gravado enquanto as teclas chegam.
+    expect(onSave).not.toHaveBeenCalled()
+
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave).toHaveBeenCalledWith('c1', expect.objectContaining({ editedSubject: 'Conheça o ROS agora' }))
+  })
+
+  it('avisa quando a IA não pôde variar e o texto-base foi usado', async () => {
+    const { RosEmailEditor } = await import('@/components/ros/RosEmailEditor')
+
+    render(<RosEmailEditor contact={readyContact} config={reviewConfig} onSave={vi.fn()}
+      onApprove={vi.fn()} onRegenerate={vi.fn()} onSkip={vi.fn()}
+      generation={{ usedProvider: 'template', didFallback: true, templateEnforced: true }} />)
+
+    expect(screen.getByText(/texto-base/i)).toBeInTheDocument()
+  })
+
+  it('usa os atalhos só fora dos campos de texto', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const { RosEmailEditor } = await import('@/components/ros/RosEmailEditor')
+    const onApprove = vi.fn()
+
+    render(<RosEmailEditor contact={readyContact} config={reviewConfig} onSave={vi.fn()}
+      onApprove={onApprove} onRegenerate={vi.fn()} onSkip={vi.fn()} />)
+
+    await user.click(screen.getByLabelText('Assunto'))
+    await user.keyboard('a')
+    expect(onApprove).not.toHaveBeenCalled()
+
+    await user.click(document.body)
+    await user.keyboard('a')
+    expect(onApprove).toHaveBeenCalledWith('c1')
+  })
+
+  it('não aprova e-mail sem assunto ou sem corpo', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const { RosEmailEditor } = await import('@/components/ros/RosEmailEditor')
+    const onApprove = vi.fn()
+    const empty = { ...readyContact, editedSubject: '', editedBody: '', generatedSubject: '', generatedBody: '' }
+
+    render(<RosEmailEditor contact={empty} config={reviewConfig} onSave={vi.fn()}
+      onApprove={onApprove} onRegenerate={vi.fn()} onSkip={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Aprovar' }))
+    expect(onApprove).not.toHaveBeenCalled()
+  })
+})
+
+describe('página de revisão ROS', () => {
+  async function seedCampaign(contacts: RosContact[]) {
+    const { useRosStore } = await import('@/store/rosStore')
+    useRosStore.setState({ campaigns: [], activeCampaignId: null, contactsByCampaign: {}, campaignConfigById: {} })
+    const id = useRosStore.getState().createCampaign('Divulgação', contacts, reviewConfig)
+    return { id, useRosStore }
+  }
+
+  it('gera os pendentes um a um e libera o envio só com tudo aprovado', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const generated: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      generated.push(body.contact.id)
+      return {
+        ok: true, status: 200,
+        json: async () => ({ subject: 'Conheça o ROS', body: `Olá, ${body.contact.firstName}!`, usedProvider: 'openai', didFallback: false }),
+      } as Response
+    }))
+
+    const { useRosStore } = await seedCampaign([
+      rosContact({ id: 'c1', email: 'ana@example.com', fullName: 'Ana Souza', firstName: 'Ana' }),
+      rosContact({ id: 'c2', email: 'bruno@example.com', fullName: 'Bruno Lima', firstName: 'Bruno' }),
+    ])
+    const { default: Page } = await import('@/app/ros/review/page')
+
+    render(<Page />)
+
+    await vi.waitFor(() => {
+      const contacts = Object.values(useRosStore.getState().contactsByCampaign)[0]
+      expect(contacts.every((c) => c.status === 'ready')).toBe(true)
+    }, { timeout: 4000 })
+
+    expect(generated).toEqual(['c1', 'c2'])
+
+    const sendButton = screen.getByRole('button', { name: /enviar campanha/i })
+    expect(sendButton).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /aprovar todos os prontos/i }))
+
+    await vi.waitFor(() => expect(sendButton).toBeEnabled())
+    await user.click(sendButton)
+    expect(push).toHaveBeenCalledWith('/ros/sending')
+  })
+
+  it('marca falha sem travar o restante da fila', async () => {
+    let call = 0
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      call += 1
+      if (call === 1) return { ok: false, status: 502, json: async () => ({ error: 'Provedor fora do ar.' }) } as Response
+      return { ok: true, status: 200, json: async () => ({ subject: 'S', body: `Olá, ${body.contact.firstName}!`, usedProvider: 'groq', didFallback: true }) } as Response
+    }))
+
+    const { useRosStore } = await seedCampaign([
+      rosContact({ id: 'c1', email: 'ana@example.com', fullName: 'Ana', firstName: 'Ana' }),
+      rosContact({ id: 'c2', email: 'bruno@example.com', fullName: 'Bruno', firstName: 'Bruno' }),
+    ])
+    const { default: Page } = await import('@/app/ros/review/page')
+
+    render(<Page />)
+
+    await vi.waitFor(() => {
+      const contacts = Object.values(useRosStore.getState().contactsByCampaign)[0]
+      expect(contacts.map((c) => c.status)).toEqual(['failed', 'ready'])
+    }, { timeout: 4000 })
+
+    expect(screen.getByRole('button', { name: /enviar campanha/i })).toBeDisabled()
+  })
+})
