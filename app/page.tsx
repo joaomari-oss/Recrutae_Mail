@@ -28,7 +28,7 @@ export default function LandingPage() {
         }}
       />
 
-      <div className="relative z-10 w-full max-w-[560px] flex flex-col items-center gap-12">
+      <div className="relative z-10 w-full max-w-[840px] flex flex-col items-center gap-12">
 
         {/* Wordmark */}
         <div className="flex flex-col items-center gap-4 animate-fade-up" style={{ animationFillMode: 'forwards' }}>
@@ -49,7 +49,7 @@ export default function LandingPage() {
         </div>
 
         {/* Mode cards */}
-        <div className="w-full grid grid-cols-2 gap-4 animate-fade-up stagger-1" style={{ animationFillMode: 'forwards' }}>
+        <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-up stagger-1" style={{ animationFillMode: 'forwards' }}>
 
           {/* Candidatos */}
           <button
@@ -138,6 +138,51 @@ export default function LandingPage() {
               <div className="flex items-center gap-2 text-[11px] text-brand-muted/60">
                 <Layers className="h-3 w-3 text-brand-coral/50 flex-shrink-0" />
                 <span>24 segmentos de mercado</span>
+              </div>
+            </div>
+          </button>
+
+          {/* Divulgação ROS */}
+          <button
+            onClick={() => router.push('/ros')}
+            className={cn(
+              'group relative flex flex-col text-left rounded-2xl overflow-hidden',
+              'bg-[#16152C] border border-[#FBB900]/25',
+              'hover:border-[#FBB900]/60 transition-all duration-300',
+              'hover:shadow-[0_20px_60px_rgba(0,0,0,0.5),0_0_0_1px_rgba(251,185,0,0.16)]',
+              'hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FBB900] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0B0A18]',
+              'p-6'
+            )}
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-[#FBB900]/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#FBB900]/50 to-transparent" />
+
+            <div className="flex items-start justify-between mb-5">
+              <div className="w-10 h-10 rounded-xl bg-[#FBB900] text-[#0B0A18] flex items-center justify-center shadow-[0_6px_18px_rgba(251,185,0,0.2)]">
+                <span aria-hidden className="font-ros text-lg font-bold tracking-[-0.12em] pr-0.5">R</span>
+              </div>
+              <div className="w-7 h-7 rounded-lg bg-[#FBB900]/10 flex items-center justify-center group-hover:bg-[#FBB900]/20 transition-colors duration-200">
+                <ArrowUpRight className="h-3.5 w-3.5 text-[#FBB900] transition-colors" />
+              </div>
+            </div>
+
+            <div className="flex-1 space-y-2 mb-5">
+              <h2 className="font-ros text-[17px] font-semibold text-[#F4F2ED] tracking-tight leading-snug">
+                Divulgação ROS
+              </h2>
+              <p className="font-ros text-[12.5px] text-[#F4F2ED]/65 leading-relaxed">
+                Campanhas de divulgação para a rede ROS, com contatos e mensagem próprios.
+              </p>
+            </div>
+
+            <div className="space-y-1.5 border-t border-[#F4F2ED]/10 pt-4">
+              <div className="flex items-center gap-2 font-ros text-[11px] text-[#F4F2ED]/55">
+                <Zap className="h-3 w-3 text-[#FBB900] flex-shrink-0" />
+                <span>Fluxo independente de divulgação</span>
+              </div>
+              <div className="flex items-center gap-2 font-ros text-[11px] text-[#F4F2ED]/55">
+                <Layers className="h-3 w-3 text-[#FBB900] flex-shrink-0" />
+                <span>Identidade ROS em cada etapa</span>
               </div>
             </div>
           </button>

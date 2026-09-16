@@ -18,6 +18,7 @@ const config: Config = {
         sans:    ['DM Sans', 'sans-serif'],
         display: ['Fraunces', 'serif'],
         mono:    ['JetBrains Mono', 'monospace'],
+        ros:     ['Poppins', 'sans-serif'],
       },
       colors: {
         border:     'hsl(var(--border))',

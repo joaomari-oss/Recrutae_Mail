@@ -55,6 +55,7 @@ const NO_SIDEBAR_PATHS = ['/login', '/', '/unsubscribe']
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isHomePage = NO_SIDEBAR_PATHS.includes(pathname)
+  const isRosMode = pathname.startsWith('/ros')
 
   if (isHomePage) {
     return (
@@ -66,7 +67,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-dark">
+    <div className={`flex h-screen overflow-hidden bg-brand-dark${isRosMode ? ' ros-theme' : ''}`}>
       <StoreInitializer />
       <EmailOpenPoller />
       <Sidebar />

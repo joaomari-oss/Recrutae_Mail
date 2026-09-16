@@ -9,6 +9,7 @@ import {
   Upload, Megaphone, Pencil, Rocket, CheckCircle,
   FolderOpen, Mail, ChevronLeft, ChevronRight, LogOut,
   Building2, UserPlus, Settings, Send, LayoutGrid, Sun, Moon,
+  Users, PenLine, MailCheck, BarChart3,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getSessionId } from '@/lib/session'
@@ -48,6 +49,18 @@ const clientBottomItems: NavEntry[] = [
   { href: '/clients/campaigns', label: 'Campanhas', icon: Building2, match: (p) => p.startsWith('/clients/campaigns') },
 ]
 
+const rosNavItems: NavEntry[] = [
+  { href: '/ros',          label: 'Contatos',  icon: Users,      match: (p) => p === '/ros' },
+  { href: '/ros/compose',  label: 'Mensagem',  icon: PenLine,    match: (p) => p === '/ros/compose' },
+  { href: '/ros/review',   label: 'Revisão',   icon: MailCheck,  match: (p) => p === '/ros/review' },
+  { href: '/ros/sending',  label: 'Enviando',  icon: Send,       match: (p) => p === '/ros/sending' },
+  { href: '/ros/sent',     label: 'Resultados', icon: BarChart3, match: (p) => p === '/ros/sent' },
+]
+
+const rosBottomItems: NavEntry[] = [
+  { href: '/ros/campaigns', label: 'Campanhas', icon: FolderOpen, match: (p) => p.startsWith('/ros/campaigns') },
+]
+
 export function Sidebar() {
   const pathname   = usePathname()
   const router     = useRouter()
@@ -56,8 +69,9 @@ export function Sidebar() {
   const [loggingOut, setLoggingOut] = useState(false)
 
   const isClientMode = pathname.startsWith('/clients')
-  const navItems     = isClientMode ? clientNavItems     : candidateNavItems
-  const bottomItems  = isClientMode ? clientBottomItems  : candidateBottomItems
+  const isRosMode    = pathname.startsWith('/ros')
+  const navItems     = isRosMode ? rosNavItems : isClientMode ? clientNavItems : candidateNavItems
+  const bottomItems  = isRosMode ? rosBottomItems : isClientMode ? clientBottomItems : candidateBottomItems
   const { theme, toggleTheme } = useTheme()
 
   // Unread notification count: open events since the user last visited /campaigns
@@ -156,30 +170,36 @@ export function Sidebar() {
         'flex items-center h-[60px] border-b border-white/[0.045] transition-all duration-300',
         collapsed ? 'justify-center px-2' : 'px-4 gap-3'
       )}>
-        <Link href="/" className="flex items-center justify-center flex-shrink-0 group">
+        <Link href="/" aria-label={isRosMode ? 'ROS' : 'Recrutaê'} className="flex items-center justify-center flex-shrink-0 group">
           <div className={cn(
             'rounded-xl border border-white/8 bg-brand-charcoal flex items-center justify-center transition-all duration-300 group-hover:border-brand-coral/20',
             collapsed ? 'w-9 h-9' : 'w-8 h-8'
           )}>
-            <Image
-              src="/recrutae.webp"
-              alt="Recrutaê"
-              width={collapsed ? 20 : 18}
-              height={collapsed ? 20 : 18}
-              className="object-contain"
-              priority
-            />
+            {isRosMode ? (
+              <span aria-hidden className="font-ros text-[17px] font-bold tracking-[-0.12em] text-brand-coral pr-0.5">R</span>
+            ) : (
+              <Image
+                src="/recrutae.webp"
+                alt="Recrutaê"
+                width={collapsed ? 20 : 18}
+                height={collapsed ? 20 : 18}
+                className="object-contain"
+                priority
+              />
+            )}
           </div>
         </Link>
         {!collapsed && (
           <div className="flex-1 min-w-0">
             <span className={cn(
               'inline-flex items-center text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-md border',
-              isClientMode
+              isRosMode
+                ? 'font-ros text-brand-coral border-brand-coral/30 bg-brand-coral/10'
+                : isClientMode
                 ? 'text-brand-coral/90 border-brand-coral/25 bg-brand-coral/8'
                 : 'text-brand-muted/70 border-white/8 bg-white/4'
             )}>
-              {isClientMode ? 'CLIENTES' : 'CANDIDATOS'}
+              {isRosMode ? 'ROS' : isClientMode ? 'CLIENTES' : 'CANDIDATOS'}
             </span>
           </div>
         )}
@@ -211,7 +231,7 @@ export function Sidebar() {
 
         {bottomItems.map((item) => {
           // Attach unread badge to the candidate Campanhas item
-          const badge = !isClientMode && item.href === '/campaigns' ? unreadCount : undefined
+          const badge = !isClientMode && !isRosMode && item.href === '/campaigns' ? unreadCount : undefined
           return <NavItem key={item.href} item={{ ...item, badge }} />
         })}
 
