@@ -158,8 +158,8 @@ export default function LandingPage() {
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#FBB900]/50 to-transparent" />
 
             <div className="flex items-start justify-between mb-5">
-              <div className="w-10 h-10 rounded-xl bg-[#FBB900]/12 border border-[#FBB900]/30 flex items-center justify-center shadow-[0_6px_18px_rgba(251,185,0,0.12)]">
-                <Image src="/ros/recrutae-ros.png" alt="" aria-hidden width={22} height={22} className="object-contain" />
+              <div className="w-10 h-10 rounded-xl bg-[#F4F2ED] border border-[#FBB900]/30 flex items-center justify-center shadow-[0_6px_18px_rgba(251,185,0,0.12)]">
+                <Image src="/ros/recrutae-ros.png" alt="" aria-hidden width={28} height={16} className="object-contain" />
               </div>
               <div className="w-7 h-7 rounded-lg bg-[#FBB900]/10 flex items-center justify-center group-hover:bg-[#FBB900]/20 transition-colors duration-200">
                 <ArrowUpRight className="h-3.5 w-3.5 text-[#FBB900] transition-colors" />

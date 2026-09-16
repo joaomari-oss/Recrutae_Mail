@@ -48,3 +48,75 @@ function nameFromEmail(email: string): string {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 }
+
+/**
+ * Problemas por contato, derivados da lista inteira.
+ *
+ * Fica fora da tabela de propósito: o botão de continuar precisa da mesma
+ * verdade, e um erro guardado dentro do componente envelhece quando a linha
+ * culpada é removida.
+ */
+export function findRosContactIssues(contacts: RosContact[]): Record<string, string> {
+  const issues: Record<string, string> = {}
+  const seen = new Map<string, string>()
+
+  for (const contact of contacts) {
+    const email = normalizeContactEmail(contact.email)
+    if (!email) {
+      issues[contact.id] = 'E-mail obrigatório'
+      continue
+    }
+    if (!isValidContactEmail(email)) {
+      issues[contact.id] = 'E-mail inválido'
+      continue
+    }
+    if (seen.has(email)) {
+      issues[contact.id] = 'E-mail duplicado'
+      continue
+    }
+    seen.set(email, contact.id)
+  }
+
+  return issues
+}
+
+/**
+ * Normaliza o que ficou livre durante a edição — e-mail em minúsculas, nome
+ * sem espaços sobrando e primeiro/último nome derivados dele.
+ */
+export function finalizeRosContacts(contacts: RosContact[]): RosContact[] {
+  return contacts.map((contact) => {
+    const fullName = contact.fullName.trim() || nameFromEmail(normalizeContactEmail(contact.email))
+    const [firstName = '', ...rest] = fullName.split(/\s+/).filter(Boolean)
+    return {
+      ...contact,
+      email: normalizeContactEmail(contact.email),
+      fullName,
+      firstName,
+      lastName: rest.join(' '),
+      company: contact.company.trim(),
+      position: contact.position.trim(),
+    }
+  })
+}
+
+const REQUIRED_TEXT_FIELDS = [
+  'id', 'firstName', 'lastName', 'fullName', 'email', 'company', 'position',
+  'generatedSubject', 'generatedBody', 'editedSubject', 'editedBody',
+] as const
+
+const CONTACT_STATUSES = ['pending', 'generating', 'ready', 'approved', 'sending', 'sent', 'failed']
+
+/**
+ * A lista viaja pelo sessionStorage e depois é validada campo a campo pela API.
+ * Uma linha incompleta viraria input não controlado aqui e 400 lá — descarta.
+ */
+export function isCompleteRosContact(value: unknown): value is RosContact {
+  if (!value || typeof value !== 'object') return false
+  const contact = value as Record<string, unknown>
+  return REQUIRED_TEXT_FIELDS.every((field) => typeof contact[field] === 'string')
+    && !!(contact.id as string).trim()
+    && typeof contact.status === 'string'
+    && CONTACT_STATUSES.includes(contact.status)
+    && typeof contact.sendAttempts === 'number'
+}

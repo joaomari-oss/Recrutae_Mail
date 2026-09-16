@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import * as React from 'react'
 import type { RosContact } from '@/lib/rosTypes'
+import { RosContactTable } from '@/components/ros/RosContactTable'
+import { findRosContactIssues } from '@/lib/ros/contacts'
 
 const push = vi.fn()
 
@@ -82,39 +85,79 @@ describe('cadastro manual de contatos ROS', () => {
   })
 })
 
-describe('tabela de conferência ROS', () => {
-  it('bloqueia e-mail duplicado na edição e preserva o contato original', async () => {
-    const user = (await import('@testing-library/user-event')).default.setup()
-    const { RosContactTable } = await import('@/components/ros/RosContactTable')
-    const onUpdate = vi.fn()
-
-    render(
+function StatefulTable({ initial }: { initial: RosContact[] }) {
+  const [contacts, setContacts] = React.useState(initial)
+  const issues = findRosContactIssues(contacts)
+  return (
+    <>
       <RosContactTable
-        contacts={[
-          rosContact({ id: '1', email: 'ana@example.com', fullName: 'Ana' }),
-          rosContact({ id: '2', email: 'bruno@example.com', fullName: 'Bruno' }),
-        ]}
-        onUpdate={onUpdate}
-        onRemove={vi.fn()}
-      />,
-    )
+        contacts={contacts}
+        issues={issues}
+        onUpdate={(id, updates) => setContacts((c) => c.map((x) => (x.id === id ? { ...x, ...updates } : x)))}
+        onRemove={(id) => setContacts((c) => c.filter((x) => x.id !== id))}
+      />
+      <output data-testid="estado">{JSON.stringify(contacts.map((c) => `${c.fullName}|${c.email}`))}</output>
+      <output data-testid="erros">{String(Object.keys(issues).length)}</output>
+    </>
+  )
+}
+
+describe('tabela de conferência ROS', () => {
+  it('permite digitar nome composto sem perder o espaço', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+
+    render(<StatefulTable initial={[rosContact({ id: '1', email: 'ana@example.com', fullName: 'Ana' })]} />)
+
+    const name = screen.getByLabelText('Nome do contato 1')
+    await user.clear(name)
+    await user.type(name, 'Ana Souza')
+
+    expect(name).toHaveValue('Ana Souza')
+    expect(screen.getByTestId('estado')).toHaveTextContent('Ana Souza|ana@example.com')
+  })
+
+  it('sinaliza duplicado sem deixar o estado divergir do que está na tela', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+
+    render(<StatefulTable initial={[
+      rosContact({ id: '1', email: 'ana@example.com', fullName: 'Ana' }),
+      rosContact({ id: '2', email: 'bruno@example.com', fullName: 'Bruno' }),
+    ]} />)
 
     const secondEmail = screen.getByLabelText('E-mail do contato 2')
     await user.clear(secondEmail)
     await user.type(secondEmail, 'ana@example.com')
 
     expect(screen.getByText('E-mail duplicado')).toBeInTheDocument()
-    expect(onUpdate).not.toHaveBeenCalledWith('2', expect.objectContaining({ email: 'ana@example.com' }))
+    expect(secondEmail).toHaveValue('ana@example.com')
+    // O que a tela mostra é exatamente o que está no estado — sem endereço intermediário.
+    expect(screen.getByTestId('estado')).toHaveTextContent('Bruno|ana@example.com')
+    expect(screen.getByTestId('erros')).toHaveTextContent('1')
+  })
+
+  it('limpa o erro quando a linha culpada é removida', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+
+    render(<StatefulTable initial={[
+      rosContact({ id: '1', email: 'ana@example.com', fullName: 'Ana' }),
+      rosContact({ id: '2', email: 'ana@example.com', fullName: 'Ana de novo' }),
+    ]} />)
+
+    expect(screen.getByTestId('erros')).toHaveTextContent('1')
+
+    await user.click(screen.getByRole('button', { name: 'Remover contato 2' }))
+
+    expect(screen.getByTestId('erros')).toHaveTextContent('0')
   })
 
   it('remove a linha escolhida', async () => {
     const user = (await import('@testing-library/user-event')).default.setup()
-    const { RosContactTable } = await import('@/components/ros/RosContactTable')
     const onRemove = vi.fn()
 
     render(
       <RosContactTable
         contacts={[rosContact({ id: '1', email: 'ana@example.com', fullName: 'Ana' })]}
+        issues={{}}
         onUpdate={vi.fn()}
         onRemove={onRemove}
       />,
@@ -178,5 +221,52 @@ describe('importação de planilha ROS', () => {
     expect(screen.getByText('2 contatos na campanha')).toBeInTheDocument()
     expect(screen.getByText('E-mail repetido: 1')).toBeInTheDocument()
     expect(screen.getByText('E-mail inválido: 1')).toBeInTheDocument()
+  })
+})
+
+describe('portão de saída da tela de contatos', () => {
+  it('restaura a lista guardada e bloqueia Continuar enquanto houver e-mail inválido', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const stored = [
+      { ...rosContact({ id: 'a', email: 'ana@example.com', fullName: 'Ana Souza', firstName: 'Ana', lastName: 'Souza' }) },
+      { ...rosContact({ id: 'b', email: 'bruno@example.com', fullName: 'Bruno Lima', firstName: 'Bruno', lastName: 'Lima' }) },
+    ]
+    sessionStorage.setItem('ros-pending-contacts', JSON.stringify(stored))
+    const { default: RosContactsPage } = await import('@/app/ros/page')
+
+    render(<RosContactsPage />)
+
+    expect(await screen.findByLabelText('E-mail do contato 1')).toHaveValue('ana@example.com')
+
+    const second = screen.getByLabelText('E-mail do contato 2')
+    await user.clear(second)
+    await user.type(second, 'sem-arroba')
+
+    const continueButton = screen.getByRole('button', { name: /continuar/i })
+    expect(continueButton).toBeDisabled()
+    expect(screen.getByText(/corrija 1 contato antes de continuar/i)).toBeInTheDocument()
+
+    await user.clear(second)
+    await user.type(second, 'BRUNO@Example.com ')
+
+    expect(continueButton).toBeEnabled()
+    await user.click(continueButton)
+
+    // A normalização acontece na saída, não a cada tecla digitada.
+    const saved = JSON.parse(sessionStorage.getItem('ros-pending-contacts') ?? '[]')
+    expect(saved[1]).toMatchObject({ email: 'bruno@example.com', fullName: 'Bruno Lima', firstName: 'Bruno' })
+  })
+
+  it('descarta linhas incompletas guardadas na sessão', async () => {
+    sessionStorage.setItem('ros-pending-contacts', JSON.stringify([
+      { id: 'quebrado', email: 'x@example.com' },
+      rosContact({ id: 'ok', email: 'ok@example.com', fullName: 'Ok' }),
+    ]))
+    const { default: RosContactsPage } = await import('@/app/ros/page')
+
+    render(<RosContactsPage />)
+
+    expect(await screen.findByLabelText('E-mail do contato 1')).toHaveValue('ok@example.com')
+    expect(screen.queryByLabelText('E-mail do contato 2')).toBeNull()
   })
 })

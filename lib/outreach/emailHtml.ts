@@ -1,3 +1,5 @@
+import { escapeHtml, renderInlineHtml, richTextToPlain, safeHttpUrl } from './richText'
+
 export type OutreachEmailInput = {
   body: string
   recruiterName: string
@@ -45,24 +47,6 @@ const ROS_THEME: BrandTheme = {
   signatureLabelLetterSpacing: '0',
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function safeHttpUrl(value: string): string | null {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null
-  } catch {
-    return null
-  }
-}
-
 function safeImageUrl(value: string): string | null {
   const httpUrl = safeHttpUrl(value)
   if (httpUrl) return httpUrl
@@ -72,34 +56,13 @@ function safeImageUrl(value: string): string | null {
     : null
 }
 
-function linkifyText(value: string, accent: string): string {
-  const urlPattern = /(https?:\/\/[^\s<>]+)/g
-  let cursor = 0
-  let html = ''
-
-  value.replace(urlPattern, (url, offset: number) => {
-    html += escapeHtml(value.slice(cursor, offset))
-    const safeUrl = safeHttpUrl(url)
-    if (!safeUrl) {
-      html += escapeHtml(url)
-    } else {
-      const escapedUrl = escapeHtml(safeUrl)
-      html += `<a href="${escapedUrl}" style="color:${accent};text-decoration:underline;font-weight:600;">${escapedUrl}</a>`
-    }
-    cursor = offset + url.length
-    return url
-  })
-
-  return html + escapeHtml(value.slice(cursor))
-}
-
 function renderBody(body: string, accent: string): string {
   return body.split(/\r?\n/).map((line) => {
     if (!line.trim()) {
       return '<p style="margin:0 0 8px 0;line-height:1.7;">&nbsp;</p>'
     }
 
-    return `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.75;color:#1A1A2E;">${linkifyText(line, accent)}</p>`
+    return `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.75;color:#1A1A2E;">${renderInlineHtml(line, accent)}</p>`
   }).join('')
 }
 
@@ -112,7 +75,7 @@ function renderOptionalLink(label: string, value: string, accent: string): strin
 }
 
 function renderText(input: OutreachEmailInput, theme: BrandTheme): string {
-  const lines = [input.body.trim(), '', input.recruiterName || theme.label]
+  const lines = [richTextToPlain(input.body.trim()), '', input.recruiterName || theme.label]
 
   if (input.recruiterRole.trim()) lines.push(input.recruiterRole.trim())
   lines.push(theme.label)

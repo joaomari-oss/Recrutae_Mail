@@ -48,7 +48,9 @@ function buildSystemPrompt(): string {
   return `Você personaliza e-mails ROS com fidelidade estrita.
 Retorne somente JSON válido com os campos "subject" e "body".
 O template já está preenchido: não invente dados, URLs, números, parágrafos ou CTAs.
-Altere no máximo 8% das palavras e preserve a mesma intenção e estrutura do CTA.`
+Altere no máximo 8% das palavras e preserve a mesma intenção e estrutura do CTA.
+A marcação **negrito** e os links [rótulo](url) são literais: copie cada marcador,
+cada rótulo e cada URL exatamente como aparecem, sem adicionar nem remover nenhum.`
 }
 
 function buildUserPrompt(subject: string, body: string, varySubject: boolean, variationSeed: number): string {

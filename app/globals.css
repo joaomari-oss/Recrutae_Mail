@@ -237,6 +237,13 @@ html.light .ros-theme .border-white\/8           { border-color: rgba(255,255,25
 html.light .ros-theme .border-white\/10          { border-color: rgba(255,255,255,0.10)  !important; }
 html.light .ros-theme .via-white\/8              { --tw-gradient-via: rgba(255,255,255,0.08) var(--tw-gradient-via-position) !important; }
 html.light .ros-theme .via-white\/\[0\.07\]      { --tw-gradient-via: rgba(255,255,255,0.07) var(--tw-gradient-via-position) !important; }
+html.light .ros-theme ::-webkit-scrollbar-thumb {
+  background: rgb(var(--brand-coral) / 0.18) !important;
+}
+html.light .ros-theme ::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--brand-coral) / 0.35) !important;
+}
+
 html.light .ros-theme .skeleton {
   background: linear-gradient(
     90deg,
@@ -244,7 +251,7 @@ html.light .ros-theme .skeleton {
     rgba(255,255,255,0.07) 50%,
     rgba(255,255,255,0.03) 75%
   ) !important;
-  background-size: 200% 100%;
+  background-size: 200% 100% !important;
 }
 
 /* ── Animation Keyframes ── */

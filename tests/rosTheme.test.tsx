@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -73,7 +73,8 @@ describe('escopo do tema ROS', () => {
 
 describe('assets de marca', () => {
   it('toda imagem referenciada pela raiz existe em public/', () => {
-    const roots = ['app', 'components', 'lib']
+    // Vitest roda a partir da raiz do pacote; ancorar aqui evita depender do cwd do shell.
+    const repoRoot = process.cwd()
     const sources: string[] = []
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir)) {
@@ -82,13 +83,25 @@ describe('assets de marca', () => {
         else if (/\.(tsx?|css)$/.test(entry)) sources.push(full)
       }
     }
-    roots.forEach(walk)
+    for (const root of ['app', 'components', 'lib', 'store']) walk(join(repoRoot, root))
+
+    // O Windows resolve caminhos sem diferenciar maiúsculas; a checagem percorre
+    // o diretório para que um erro de caixa falhe aqui e não só no deploy Linux.
+    const existsCaseSensitive = (relative: string): boolean => {
+      let current = join(repoRoot, 'public')
+      for (const segment of relative.split('/').filter(Boolean)) {
+        if (!readdirSync(current).includes(segment)) return false
+        current = join(current, segment)
+      }
+      return true
+    }
 
     const missing: string[] = []
     for (const file of sources) {
       const content = readFileSync(file, 'utf8')
-      for (const match of content.matchAll(/['"`](\/[\w./-]+\.(?:png|jpe?g|webp|svg|gif|ico))['"`]/g)) {
-        if (!existsSync(join('public', match[1]))) missing.push(`${file} → ${match[1]}`)
+      // Só caminhos de raiz do próprio projeto — `//cdn.exemplo/x.png` é externo.
+      for (const match of content.matchAll(/['"`](\/[\w.-][\w./-]*\.(?:png|jpe?g|webp|svg|gif|ico))['"`]/g)) {
+        if (!existsCaseSensitive(match[1])) missing.push(`${file.slice(repoRoot.length)} → ${match[1]}`)
       }
     }
 

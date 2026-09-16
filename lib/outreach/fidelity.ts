@@ -22,6 +22,21 @@ function numbers(text: string): string[] {
   return text.match(NUMBER_RE) ?? []
 }
 
+/**
+ * Marcação do corpo — negrito e links nomeados. A IA pode trocar palavras, mas
+ * não pode remover o destaque nem renomear o rótulo do CTA clicável.
+ */
+function markup(text: string): string[] {
+  const found: string[] = []
+  for (const match of text.matchAll(/\*\*([^*\n]+)\*\*/g)) {
+    found.push(`b:${match[1].trim().toLowerCase()}`)
+  }
+  for (const match of text.matchAll(/\[([^\]\n]*)\]\(([^)\s]+)\)/g)) {
+    found.push(`a:${match[1].trim().toLowerCase()}|${match[2].trim()}`)
+  }
+  return found
+}
+
 function paragraphs(text: string): string[] {
   return text.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean)
 }
@@ -92,6 +107,9 @@ export function validateRosVariation(
   }
   if (!sameList(numbers(source), numbers(candidate))) {
     return { ok: false, changeRatio, reason: 'números foram alterados' }
+  }
+  if (!sameList(markup(source), markup(candidate))) {
+    return { ok: false, changeRatio, reason: 'negrito ou link nomeado foi alterado' }
   }
   if (paragraphs(source).length !== paragraphs(candidate).length) {
     return { ok: false, changeRatio, reason: 'quantidade de parágrafos foi alterada' }

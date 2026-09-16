@@ -59,6 +59,8 @@ export function RosManualContactForm({ existingEmails, onAdd }: RosManualContact
                 type={field.type}
                 value={draft[field.key]}
                 placeholder={field.placeholder}
+                required={field.required}
+                aria-required={field.required || undefined}
                 aria-invalid={isEmail && error ? true : undefined}
                 aria-describedby={isEmail && error ? errorId : undefined}
                 onChange={(event) => {

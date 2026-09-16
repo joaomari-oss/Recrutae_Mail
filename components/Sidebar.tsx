@@ -173,17 +173,32 @@ export function Sidebar() {
       )}>
         <Link href="/" aria-label="Recrutaê — escolher modo" className="flex items-center justify-center flex-shrink-0 group">
           <div className={cn(
-            'rounded-xl border border-white/8 bg-brand-charcoal flex items-center justify-center transition-all duration-300 group-hover:border-brand-coral/20',
+            'rounded-xl border flex items-center justify-center transition-all duration-300',
+            isRosMode
+              ? 'border-white/10 bg-[#F4F2ED] group-hover:border-brand-coral/40'
+              : 'border-white/8 bg-brand-charcoal group-hover:border-brand-coral/20',
             collapsed ? 'w-9 h-9' : 'w-8 h-8'
           )}>
-            <Image
-              src={isRosMode ? '/ros/recrutae-ros.png' : '/recrutae.webp'}
-              alt={isRosMode ? 'Recrutaê OS' : 'Recrutaê'}
-              width={collapsed ? 20 : 18}
-              height={collapsed ? 20 : 18}
-              className="object-contain"
-              priority
-            />
+            {isRosMode ? (
+              /* Wordmark 1,70:1 — altura proporcional, senão a arte fica achatada. */
+              <Image
+                src="/ros/recrutae-ros.png"
+                alt="Recrutaê OS"
+                width={collapsed ? 24 : 21}
+                height={collapsed ? 14 : 12}
+                className="object-contain"
+                priority
+              />
+            ) : (
+              <Image
+                src="/recrutae.webp"
+                alt="Recrutaê"
+                width={collapsed ? 20 : 18}
+                height={collapsed ? 20 : 18}
+                className="object-contain"
+                priority
+              />
+            )}
           </div>
         </Link>
         {!collapsed && (
@@ -289,9 +304,8 @@ export function Sidebar() {
           )}
         </button>
 
-        {/* Theme toggle — ROS is dark-only, so the control is hidden there
-            instead of sitting inert next to the ink surface. */}
-        {!isRosMode && (
+        {/* Theme toggle — a área ROS é escura por definição e ignora a troca,
+            mas o controle continua acessível para o resto do aplicativo. */}
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
@@ -321,7 +335,6 @@ export function Sidebar() {
             </div>
           )}
         </button>
-        )}
 
         <button
           onClick={() => setCollapsed(!collapsed)}

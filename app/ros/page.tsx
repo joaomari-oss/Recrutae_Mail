@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useDropzone, type FileRejection } from 'react-dropzone'
 import { AlertCircle, ArrowRight, CheckCircle2, Download, FileText, Upload, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import { parseRosContactsFile } from '@/lib/ros/contacts'
+import { finalizeRosContacts, findRosContactIssues, isCompleteRosContact, parseRosContactsFile } from '@/lib/ros/contacts'
 import { normalizeContactEmail } from '@/lib/contactParsing'
 import { exportToCSV } from '@/lib/utils'
 import type { RejectedContactRow } from '@/lib/contactParsing'
@@ -41,7 +41,7 @@ function readStoredContacts(): RosContact[] {
     const raw = sessionStorage.getItem(PENDING_CONTACTS_KEY)
     const parsed: unknown = raw ? JSON.parse(raw) : []
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((c): c is RosContact => !!c && typeof (c as RosContact).email === 'string')
+    return parsed.filter(isCompleteRosContact)
   } catch {
     return []
   }
@@ -58,6 +58,9 @@ export default function RosContactsPage() {
   // Voltar da composição não pode custar a lista já montada.
   useEffect(() => { setContacts(readStoredContacts()) }, [])
 
+  const issues = useMemo(() => findRosContactIssues(contacts), [contacts])
+  const hasIssues = Object.keys(issues).length > 0
+
   const existingEmails = useMemo(
     () => new Set(contacts.map((contact) => normalizeContactEmail(contact.email))),
     [contacts],
@@ -68,34 +71,38 @@ export default function RosContactsPage() {
     if (!file) return
     setLoading(true)
     setFileError(null)
+    setRejected([])
     setFileName(file.name)
     try {
       const result = await parseRosContactsFile(file)
-      setContacts((current) => {
-        const seen = new Set(current.map((contact) => normalizeContactEmail(contact.email)))
-        const fresh: RosContact[] = []
-        const repeated: RejectedContactRow[] = []
-        result.contacts.forEach((contact, index) => {
-          const email = normalizeContactEmail(contact.email)
-          if (seen.has(email)) {
-            // Repetido em relação ao que já está na tela, não dentro do arquivo.
-            repeated.push({ rowNumber: index + 1, reason: 'duplicate', values: [contact.fullName, contact.email] })
-            return
-          }
-          seen.add(email)
-          fresh.push(contact)
-        })
-        setRejected([...result.rejected, ...repeated])
-        if (!fresh.length && !result.rejected.length) toast.error('Nenhum contato novo neste arquivo.')
-        return [...current, ...fresh]
+      // Fora do updater de estado: React reavalia updaters (e o StrictMode os
+      // duplica), então efeitos ali dentro disparariam mais de uma vez.
+      const seen = new Set(contacts.map((contact) => normalizeContactEmail(contact.email)))
+      const fresh: RosContact[] = []
+      const repeated: RejectedContactRow[] = []
+      result.contacts.forEach((contact, index) => {
+        const email = normalizeContactEmail(contact.email)
+        if (seen.has(email)) {
+          // Repetido em relação ao que já está na tela, não dentro do arquivo.
+          repeated.push({ rowNumber: index + 1, reason: 'duplicate', values: [contact.fullName, contact.email] })
+          return
+        }
+        seen.add(email)
+        fresh.push(contact)
       })
+
+      setRejected([...result.rejected, ...repeated])
+      if (fresh.length) setContacts((current) => [...current, ...fresh])
+      else if (!result.rejected.length && !repeated.length) {
+        setFileError('Nenhum contato foi encontrado. Confira se existe uma coluna de e-mail com endereços válidos.')
+      }
     } catch (cause) {
       setFileError(cause instanceof Error ? cause.message : 'Erro ao processar o arquivo.')
       setFileName(null)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [contacts])
 
   const onDropRejected = useCallback((rejections: FileRejection[]) => {
     const name = rejections[0]?.file?.name ?? 'arquivo'
@@ -119,11 +126,12 @@ export default function RosContactsPage() {
     exportToCSV([
       ...contacts.map((contact) => ({
         situacao: 'aceito', linha: '', nome: contact.fullName, email: contact.email,
-        empresa: contact.company, cargo: contact.position, motivo: '',
+        empresa: contact.company, cargo: contact.position, motivo: '', valores: '',
       })),
       ...rejected.map((row) => ({
-        situacao: 'rejeitado', linha: String(row.rowNumber), nome: '', email: '',
-        empresa: '', cargo: '', motivo: REJECTION_LABELS[row.reason],
+        situacao: 'rejeitado', linha: String(row.rowNumber), nome: row.values[0] ?? '',
+        email: row.values[1] ?? '', empresa: '', cargo: '',
+        motivo: REJECTION_LABELS[row.reason], valores: row.values.join(' | '),
       })),
     ], `contatos-ros-${new Date().toISOString().slice(0, 10)}.csv`)
   }
@@ -135,9 +143,9 @@ export default function RosContactsPage() {
   }, [rejected])
 
   const goToCompose = () => {
-    if (!contacts.length) return
+    if (!contacts.length || hasIssues) return
     try {
-      sessionStorage.setItem(PENDING_CONTACTS_KEY, JSON.stringify(contacts))
+      sessionStorage.setItem(PENDING_CONTACTS_KEY, JSON.stringify(finalizeRosContacts(contacts)))
     } catch {
       toast.error('Não foi possível guardar os contatos nesta aba. Libere espaço e tente de novo.')
       return
@@ -207,7 +215,7 @@ export default function RosContactsPage() {
           )}
 
           {rejectionSummary.length > 0 && (
-            <div className="space-y-2 rounded-xl border border-brand-warning/20 bg-brand-warning/5 p-4">
+            <div aria-live="polite" className="space-y-2 rounded-xl border border-brand-warning/20 bg-brand-warning/5 p-4">
               <p className="text-sm font-semibold text-brand-white">
                 {rejected.length} linha{rejected.length > 1 ? 's' : ''} fora da campanha
               </p>
@@ -233,7 +241,7 @@ export default function RosContactsPage() {
               <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-brand-coral/20 bg-brand-coral/10">
                 <Users className="h-4 w-4 text-brand-coral" />
               </span>
-              <p className="text-sm font-semibold text-brand-white">
+              <p aria-live="polite" className="text-sm font-semibold text-brand-white">
                 {contacts.length} contato{contacts.length === 1 ? '' : 's'} na campanha
               </p>
             </div>
@@ -249,13 +257,19 @@ export default function RosContactsPage() {
             )}
           </div>
 
-          <RosContactTable contacts={contacts} onUpdate={updateContact} onRemove={removeContact} />
+          <RosContactTable contacts={contacts} issues={issues} onUpdate={updateContact} onRemove={removeContact} />
+
+          {hasIssues && (
+            <p role="alert" className="text-sm text-brand-error">
+              Corrija {Object.keys(issues).length} contato{Object.keys(issues).length > 1 ? 's' : ''} antes de continuar.
+            </p>
+          )}
         </section>
 
         <button
           type="button"
           onClick={goToCompose}
-          disabled={!contacts.length}
+          disabled={!contacts.length || hasIssues}
           className="btn-coral flex w-full items-center justify-center gap-3 py-4 text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:transform-none"
         >
           Continuar para a mensagem
