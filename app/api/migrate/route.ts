@@ -84,6 +84,59 @@ create policy "recrutae_all_campaigns" on client_campaigns
 drop policy if exists "recrutae_all_contacts" on client_contacts;
 create policy "recrutae_all_contacts" on client_contacts
   for all to anon, authenticated using (true) with check (true);
+
+-- Divulgação ROS: additive and safe to run repeatedly.
+alter table client_campaigns add column if not exists campaign_kind text not null default 'clients';
+alter table client_campaigns add column if not exists recruiter_role text not null default '';
+alter table client_campaigns add column if not exists recruiter_linkedin text not null default '';
+alter table client_campaigns add column if not exists recruiter_whatsapp text not null default '';
+alter table client_campaigns add column if not exists reply_to text not null default '';
+alter table client_campaigns add column if not exists subject_template text not null default '';
+alter table client_campaigns add column if not exists vary_subject boolean not null default false;
+alter table client_campaigns add column if not exists variation_percent smallint not null default 6;
+
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'client_campaigns_kind_check' and conrelid = 'client_campaigns'::regclass
+  ) then
+    alter table client_campaigns add constraint client_campaigns_kind_check
+      check (campaign_kind in ('clients', 'ros'));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'client_campaigns_variation_check' and conrelid = 'client_campaigns'::regclass
+  ) then
+    alter table client_campaigns add constraint client_campaigns_variation_check
+      check (variation_percent between 5 and 8);
+  end if;
+end $$;
+
+create table if not exists email_suppressions (
+  email text primary key,
+  reason text not null check (reason in ('unsubscribe', 'bounce', 'complaint')),
+  source text not null,
+  message_id text,
+  created_at timestamptz not null default now()
+);
+
+-- Server/service-role access only: deliberately no anon/authenticated policy.
+alter table email_suppressions enable row level security;
+
+create index if not exists idx_client_campaigns_kind_created on client_campaigns(campaign_kind, created_at desc);
+-- Not unique: preserve existing data; import/send flows handle duplicate contacts.
+create index if not exists idx_client_contacts_campaign_email on client_contacts(campaign_id, lower(email));
+
+create table if not exists email_events (
+  id uuid default gen_random_uuid() primary key,
+  message_id text not null,
+  campaign_id text,
+  contact_id text,
+  recipient_email text,
+  event_type text not null default 'opened',
+  received_at timestamptz default now()
+);
+alter table email_events add column if not exists contact_id text;
 `
 
 export async function GET() {
@@ -104,10 +157,17 @@ export async function GET() {
   }
 
   // Check tables exist
-  const { error: campErr } = await db.from('client_campaigns').select('id').limit(0)
+  const { error: campErr } = await db.from('client_campaigns')
+    .select('id, campaign_kind, recruiter_role, recruiter_linkedin, recruiter_whatsapp, reply_to, subject_template, vary_subject, variation_percent').limit(0)
   const { error: contErr } = await db.from('client_contacts').select('id').limit(0)
+  // Suppressions intentionally have no anon/authenticated policy. An anon
+  // health check must not mistake that expected denial for a missing table.
+  const { error: suppressionErr } = usingAdmin
+    ? await db.from('email_suppressions').select('email, reason, source, message_id, created_at').limit(0)
+    : { error: null }
+  const { error: eventsErr } = await db.from('email_events').select('contact_id, campaign_id, event_type, received_at').limit(0)
 
-  if (campErr || contErr) {
+  if (campErr || contErr || suppressionErr || eventsErr) {
     const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')
       .replace('https://', '')
       .replace('.supabase.co', '')
@@ -126,6 +186,8 @@ export async function GET() {
         errors: {
           client_campaigns: campErr?.message ?? null,
           client_contacts: contErr?.message ?? null,
+          email_suppressions: suppressionErr?.message ?? null,
+          email_events: eventsErr?.message ?? null,
         },
       },
       { status: 500 }
