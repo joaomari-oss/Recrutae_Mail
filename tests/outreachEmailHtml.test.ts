@@ -53,6 +53,10 @@ describe('email ROS', () => {
     expect(rendered.html).not.toContain('Recrutaê | OS')
     expect(rendered.html).not.toContain('LinkedIn')
     expect(rendered.html).not.toContain('WhatsApp')
+    expect(rendered.html).toContain('Para não receber mais emails, responda com "cancelar".')
+    expect(rendered.html).toContain('width="100"')
+    expect(rendered.html).toContain('background-color:#f5f5f7')
+    expect(rendered.html).toContain('font-size:11px;line-height:1.4;font-weight:700;letter-spacing:0.8px;color:#F5A623;">Recrutaê</p>')
   })
 
   it('preserva parâmetros de URL ao criar links seguros no corpo', () => {
@@ -63,5 +67,17 @@ describe('email ROS', () => {
     })
 
     expect(rendered.html).toContain('href="https://recrutae.com.br/ros?source=email&amp;campaign=outreach"')
+  })
+
+  it('mantém o layout fluido e a marca ROS em tinta escura', () => {
+    const rendered = renderOutreachEmail({
+      body: 'Olá', recruiterName: 'Ana', recruiterRole: '', recruiterLinkedin: '', recruiterWhatsapp: '',
+      brand: 'ros', logoUrl: 'https://mail.recrutae.com.br/ros/recrutae-ros.png',
+    })
+
+    expect(rendered.html).toContain('width="100%" style="width:100%;max-width:600px;')
+    expect(rendered.html).not.toContain('width="600"')
+    expect(rendered.html).toContain('font-size:14px;line-height:1.4;font-weight:700;letter-spacing:0;color:#0B0A18;">Recrutaê | OS</p>')
+    expect(rendered.html).not.toContain('Para não receber mais emails, responda com "cancelar".')
   })
 })

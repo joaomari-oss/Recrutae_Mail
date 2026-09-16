@@ -7,9 +7,21 @@ export type RosEmailPreviewProps = Omit<OutreachEmailInput, 'brand' | 'logoUrl'>
   title?: string
 }
 
+function resolvePreviewUrl(url: string): string {
+  const baseUrl = typeof window === 'undefined'
+    ? process.env.NEXT_PUBLIC_SITE_URL || 'https://mail.recrutae.com.br'
+    : window.location.origin
+
+  try {
+    return new URL(url, baseUrl).toString()
+  } catch {
+    return url
+  }
+}
+
 /** Visual preview backed by the exact HTML sent by the ROS delivery route. */
 export function RosEmailPreview({ logoUrl = '/ros/recrutae-ros.png', title = 'Prévia do e-mail', ...input }: RosEmailPreviewProps) {
-  const email = renderOutreachEmail({ ...input, brand: 'ros', logoUrl })
+  const email = renderOutreachEmail({ ...input, brand: 'ros', logoUrl: resolvePreviewUrl(logoUrl) })
 
   return (
     <section aria-label={title} className="overflow-hidden rounded-lg border border-[#35334d] bg-[#0B0A18]">

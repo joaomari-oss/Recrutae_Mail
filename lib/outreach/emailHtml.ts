@@ -14,6 +14,11 @@ type BrandTheme = {
   dark: string
   label: string
   logoAlt: string
+  outerBackground: string
+  logoWidth: number
+  signatureLabelColor: string
+  signatureLabelFontSize: number
+  signatureLabelLetterSpacing: string
 }
 
 const CLIENTS_THEME: BrandTheme = {
@@ -21,6 +26,11 @@ const CLIENTS_THEME: BrandTheme = {
   dark: '#1a1a2e',
   label: 'Recrutaê',
   logoAlt: 'Recrutaê',
+  outerBackground: '#f5f5f7',
+  logoWidth: 100,
+  signatureLabelColor: '#F5A623',
+  signatureLabelFontSize: 11,
+  signatureLabelLetterSpacing: '0.8px',
 }
 
 const ROS_THEME: BrandTheme = {
@@ -28,6 +38,11 @@ const ROS_THEME: BrandTheme = {
   dark: '#0B0A18',
   label: 'Recrutaê | OS',
   logoAlt: 'Recrutaê | OS',
+  outerBackground: '#F4F2ED',
+  logoWidth: 58,
+  signatureLabelColor: '#0B0A18',
+  signatureLabelFontSize: 14,
+  signatureLabelLetterSpacing: '0',
 }
 
 function escapeHtml(value: string): string {
@@ -119,7 +134,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): { html: string; 
   const logoUrl = safeImageUrl(input.logoUrl)
   const unsubscribeUrl = safeHttpUrl(input.unsubscribeUrl ?? '')
   const logo = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="${theme.logoAlt}" width="58" style="display:block;border:0;width:58px;height:auto;max-width:58px;" />`
+    ? `<img src="${escapeHtml(logoUrl)}" alt="${theme.logoAlt}" width="${theme.logoWidth}" style="display:block;border:0;width:${theme.logoWidth}px;height:auto;max-width:${theme.logoWidth}px;" />`
     : `<span style="font-size:14px;font-weight:700;color:${theme.dark};">${theme.label}</span>`
   const contacts = [
     renderOptionalLink('LinkedIn', input.recruiterLinkedin, theme.accent),
@@ -128,7 +143,9 @@ export function renderOutreachEmail(input: OutreachEmailInput): { html: string; 
 
   const unsubscribe = unsubscribeUrl
     ? `<p style="margin:12px 0 0;font-size:11px;line-height:1.5;color:#6B7280;text-align:center;">Não quer mais receber estes e-mails? <a href="${escapeHtml(unsubscribeUrl)}" style="color:${theme.accent};text-decoration:underline;">Descadastre-se</a>.</p>`
-    : '<p style="margin:0;font-size:11px;line-height:1.5;color:#6B7280;text-align:center;">Você recebeu este e-mail pois seu perfil foi identificado como relevante.</p>'
+    : input.brand === 'clients'
+      ? '<p style="margin:0;font-size:11px;line-height:1.5;color:#6B7280;text-align:center;">Você recebeu este email pois seu perfil foi identificado como relevante.<br />Para não receber mais emails, responda com "cancelar".</p>'
+      : '<p style="margin:0;font-size:11px;line-height:1.5;color:#6B7280;text-align:center;">Você recebeu este e-mail pois seu perfil foi identificado como relevante.</p>'
 
   return {
     html: `<!DOCTYPE html>
@@ -138,9 +155,9 @@ export function renderOutreachEmail(input: OutreachEmailInput): { html: string; 
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="x-apple-disable-message-reformatting" />
 </head>
-<body style="margin:0;padding:0;background-color:#F4F2ED;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;background-color:#F4F2ED;"><tr><td style="padding:32px 16px;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px;margin:0 auto;background-color:#FFFFFF;border-collapse:separate;border-spacing:0;">
+<body style="margin:0;padding:0;background-color:${theme.outerBackground};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;background-color:${theme.outerBackground};"><tr><td style="padding:32px 16px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;max-width:600px;margin:0 auto;background-color:#FFFFFF;border-collapse:separate;border-spacing:0;">
   <tr><td style="height:4px;background-color:${theme.dark};font-size:1px;line-height:1px;">&nbsp;</td></tr>
   <tr><td style="padding:36px 40px 32px;font-family:Helvetica,Arial,sans-serif;">${renderBody(input.body, theme.accent)}
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:32px;border-top:1px solid #E5E5EA;"><tr><td style="padding-top:22px;">
@@ -149,7 +166,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): { html: string; 
         <td style="padding-left:14px;border-left:3px solid ${theme.accent};vertical-align:middle;">
           <p style="margin:0;font-size:15px;line-height:1.3;font-weight:700;color:${theme.dark};">${name}</p>
           ${role ? `<p style="margin:3px 0 0;font-size:13px;line-height:1.4;color:#6B7280;">${role}</p>` : ''}
-          <p style="margin:6px 0 0;font-size:11px;line-height:1.4;font-weight:700;letter-spacing:0.8px;color:${theme.accent};">${theme.label}</p>
+          <p style="margin:6px 0 0;font-size:${theme.signatureLabelFontSize}px;line-height:1.4;font-weight:700;letter-spacing:${theme.signatureLabelLetterSpacing};color:${theme.signatureLabelColor};">${theme.label}</p>
           ${contacts ? `<p style="margin:7px 0 0;">${contacts}</p>` : ''}
         </td>
       </tr></table>
