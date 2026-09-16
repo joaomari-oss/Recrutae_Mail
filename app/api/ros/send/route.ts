@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import {
   claimRosContact,
+  getOrCreateRosSendPayload,
   isEmailSuppressed,
   markContactFailed,
   markContactSent,
@@ -72,12 +73,18 @@ export async function POST(request: NextRequest) {
     ),
     markSent: (contactId, messageId) => markContactSent(db, contactId, messageId),
     markFailed: (contactId, message) => markContactFailed(db, contactId, message),
+    preparePayload: async (campaignId, contactId, payload) => {
+      const serialized = await getOrCreateRosSendPayload(db, campaignId, contactId, JSON.stringify(payload))
+      return JSON.parse(serialized)
+    },
     createToken: input => createUnsubscribeToken(input, unsubscribeSecret),
     appBaseUrl,
     logoUrl: new URL('/ros/recrutae-ros.png', appBaseUrl).toString(),
   })
 
   if (result.success) return NextResponse.json(result)
-  const status = result.suppressed ? 409 : result.claimed === false ? 409 : 502
+  const status = result.invalidRecipient ? 400
+    : result.unavailable ? 503
+      : result.suppressed || result.claimed === false ? 409 : 502
   return NextResponse.json(result, { status })
 }

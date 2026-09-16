@@ -7,6 +7,7 @@ alter table client_campaigns add column if not exists reply_to text not null def
 alter table client_campaigns add column if not exists subject_template text not null default '';
 alter table client_campaigns add column if not exists vary_subject boolean not null default false;
 alter table client_campaigns add column if not exists variation_percent smallint not null default 6;
+alter table client_contacts add column if not exists send_payload text;
 
 do $$ begin
   if not exists (

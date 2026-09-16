@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import type { SendRosEmailRequest } from '@/lib/rosTypes'
-import { sendRosEmail, type RosSendDependencies } from '@/lib/ros/send'
+import { sendRosEmail, type RosEmailPayload, type RosSendDependencies } from '@/lib/ros/send'
 
 const routeState = vi.hoisted(() => ({
   admin: {} as object | null,
@@ -11,6 +11,7 @@ const routeState = vi.hoisted(() => ({
   claim: vi.fn(),
   markSent: vi.fn(),
   markFailed: vi.fn(),
+  preparePayload: vi.fn(),
 }))
 
 vi.mock('@/lib/supabaseAdmin', () => ({
@@ -22,6 +23,7 @@ vi.mock('@/lib/outreach/repository', () => ({
   claimRosContact: routeState.claim,
   markContactSent: routeState.markSent,
   markContactFailed: routeState.markFailed,
+  getOrCreateRosSendPayload: routeState.preparePayload,
 }))
 
 vi.mock('resend', () => ({
@@ -51,6 +53,7 @@ function dependencies(overrides: Partial<RosSendDependencies> = {}): RosSendDepe
     send: vi.fn().mockResolvedValue({ data: { id: 'resend-1' }, error: null }),
     markSent: vi.fn().mockResolvedValue(undefined),
     markFailed: vi.fn().mockResolvedValue(undefined),
+    preparePayload: vi.fn(async (_campaignId, _contactId, payload) => payload),
     createToken: vi.fn().mockResolvedValue('signed-token'),
     appBaseUrl: 'https://mail.recrutae.com.br',
     logoUrl: 'https://mail.recrutae.com.br/ros/recrutae-ros.png',
@@ -122,8 +125,10 @@ describe('sendRosEmail', () => {
       { idempotencyKey: 'ros/camp-1/contact-1' },
     )
     const payload = vi.mocked(deps.send).mock.calls[0][0]
-    expect(payload.html).toContain('api/unsubscribe?token=signed+token')
-    expect(payload.text).toContain('https://mail.recrutae.com.br/api/unsubscribe?token=signed+token')
+    expect(payload.html).toContain('href="https://mail.recrutae.com.br/unsubscribe?token=signed+token"')
+    expect(payload.html).not.toContain('href="https://mail.recrutae.com.br/api/unsubscribe?token=signed+token"')
+    expect(payload.text).toContain('https://mail.recrutae.com.br/unsubscribe?token=signed+token')
+    expect(payload.text).not.toContain('https://mail.recrutae.com.br/api/unsubscribe?token=signed+token')
     expect(deps.markSent).toHaveBeenCalledWith('contact-1', 'resend-42')
     expect(deps.markFailed).not.toHaveBeenCalled()
   })
@@ -158,6 +163,76 @@ describe('sendRosEmail', () => {
     expect(deps.send).not.toHaveBeenCalled()
     expect(deps.markFailed).toHaveBeenCalledWith('contact-1', expect.stringContaining('HTTPS'))
   })
+
+  it('reutiliza payload durável byte-for-byte após falha pós-Resend mesmo com avanço do relógio', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-16T12:00:00.000Z'))
+      let persisted: string | null = null
+      const sentPayloads: string[] = []
+      const deps = dependencies({
+        createToken: vi.fn(async () => `token-${Date.now()}`),
+        preparePayload: vi.fn(async (_campaignId, _contactId, candidate) => {
+          persisted ??= JSON.stringify(candidate)
+          return JSON.parse(persisted) as RosEmailPayload
+        }),
+        send: vi.fn(async payload => {
+          sentPayloads.push(JSON.stringify(payload))
+          return { data: { id: 'resend-stable' }, error: null }
+        }),
+        markSent: vi.fn()
+          .mockRejectedValueOnce(new Error('database offline after send'))
+          .mockResolvedValueOnce(undefined),
+      })
+
+      const first = await sendRosEmail(request, deps)
+      vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'))
+      const retry = await sendRosEmail(request, deps)
+
+      expect(first).toMatchObject({ success: false, unavailable: true })
+      expect(retry).toEqual({ success: true, messageId: 'resend-stable' })
+      expect(deps.createToken).toHaveBeenCalledTimes(2)
+      expect(sentPayloads).toHaveLength(2)
+      expect(sentPayloads[1]).toBe(sentPayloads[0])
+      expect(vi.mocked(deps.send).mock.calls.map(call => call[1])).toEqual([
+        { idempotencyKey: 'ros/camp-1/contact-1' },
+        { idempotencyKey: 'ros/camp-1/contact-1' },
+      ])
+      expect(deps.markFailed).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejeita destinatário inválido antes de consultar supressão ou reservar', async () => {
+    const deps = dependencies()
+
+    const result = await sendRosEmail({ ...request, to: 'email-invalido' }, deps)
+
+    expect(result).toMatchObject({ success: false, invalidRecipient: true })
+    expect(deps.isSuppressed).not.toHaveBeenCalled()
+    expect(deps.claimContact).not.toHaveBeenCalled()
+    expect(deps.send).not.toHaveBeenCalled()
+  })
+
+  it('converte falha de supressão em indisponibilidade sem reservar ou enviar', async () => {
+    const deps = dependencies({ isSuppressed: vi.fn().mockRejectedValue(new Error('supabase offline')) })
+
+    const result = await sendRosEmail(request, deps)
+
+    expect(result).toMatchObject({ success: false, unavailable: true })
+    expect(deps.claimContact).not.toHaveBeenCalled()
+    expect(deps.send).not.toHaveBeenCalled()
+  })
+
+  it('converte falha de claim em indisponibilidade sem enviar', async () => {
+    const deps = dependencies({ claimContact: vi.fn().mockRejectedValue(new Error('supabase offline')) })
+
+    const result = await sendRosEmail(request, deps)
+
+    expect(result).toMatchObject({ success: false, unavailable: true })
+    expect(deps.send).not.toHaveBeenCalled()
+  })
 })
 
 describe('POST /api/ros/send', () => {
@@ -170,6 +245,7 @@ describe('POST /api/ros/send', () => {
     routeState.claim.mockResolvedValue(true)
     routeState.markSent.mockResolvedValue(undefined)
     routeState.markFailed.mockResolvedValue(undefined)
+    routeState.preparePayload.mockImplementation(async (_db, _campaignId, _contactId, payload) => payload)
     process.env.RESEND_API_KEY = 're_test'
     process.env.APP_BASE_URL = 'https://mail.recrutae.com.br'
     process.env.UNSUBSCRIBE_SIGNING_SECRET = 'x'.repeat(32)
@@ -224,5 +300,46 @@ describe('POST /api/ros/send', () => {
       }),
       { idempotencyKey: 'ros/camp-1/contact-1' },
     )
+  })
+
+  it('retorna 400 para destinatário inválido antes de acessar Supabase ou Resend', async () => {
+    const { POST } = await import('@/app/api/ros/send/route')
+
+    const response = await POST(new NextRequest('https://app.test/api/ros/send', {
+      method: 'POST', body: JSON.stringify({ ...request, to: 'email-invalido' }),
+      headers: { 'content-type': 'application/json' },
+    }))
+
+    expect(response.status).toBe(400)
+    expect(routeState.isSuppressed).not.toHaveBeenCalled()
+    expect(routeState.claim).not.toHaveBeenCalled()
+    expect(routeState.send).not.toHaveBeenCalled()
+  })
+
+  it('retorna 503 JSON quando a consulta de supressão falha', async () => {
+    routeState.isSuppressed.mockRejectedValueOnce(new Error('supabase offline'))
+    const { POST } = await import('@/app/api/ros/send/route')
+
+    const response = await POST(new NextRequest('https://app.test/api/ros/send', {
+      method: 'POST', body: JSON.stringify(request), headers: { 'content-type': 'application/json' },
+    }))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({ success: false })
+    expect(routeState.claim).not.toHaveBeenCalled()
+    expect(routeState.send).not.toHaveBeenCalled()
+  })
+
+  it('retorna 503 JSON quando a reserva falha', async () => {
+    routeState.claim.mockRejectedValueOnce(new Error('supabase offline'))
+    const { POST } = await import('@/app/api/ros/send/route')
+
+    const response = await POST(new NextRequest('https://app.test/api/ros/send', {
+      method: 'POST', body: JSON.stringify(request), headers: { 'content-type': 'application/json' },
+    }))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({ success: false })
+    expect(routeState.send).not.toHaveBeenCalled()
   })
 })

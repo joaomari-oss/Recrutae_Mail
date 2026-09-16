@@ -1,6 +1,18 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runRosPreflight } from '@/lib/ros/preflight'
+
+const resendRouteState = vi.hoisted(() => ({
+  constructed: vi.fn(),
+  listDomains: vi.fn(),
+}))
+
+vi.mock('resend', () => ({
+  Resend: class {
+    domains = { list: resendRouteState.listDomains }
+    constructor(apiKey: string | undefined) { resendRouteState.constructed(apiKey) }
+  },
+}))
 
 const validEnv = {
   RESEND_API_KEY: 're_test',
@@ -88,5 +100,33 @@ describe('runRosPreflight', () => {
 
     expect(result.canSend).toBe(true)
     expect(result.fromEmail).toBe('contato@recrutae.com.br')
+  })
+})
+
+describe('GET /api/ros/preflight', () => {
+  const originalEnv = { ...process.env }
+
+  afterEach(() => {
+    process.env = { ...originalEnv }
+    vi.clearAllMocks()
+  })
+
+  it('retorna checks e 503 sem instanciar o SDK quando RESEND_API_KEY está ausente', async () => {
+    delete process.env.RESEND_API_KEY
+    process.env.APP_BASE_URL = 'https://mail.recrutae.com.br'
+    process.env.UNSUBSCRIBE_SIGNING_SECRET = 'x'.repeat(32)
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project.supabase.co'
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-test'
+    const { GET } = await import('@/app/api/ros/preflight/route')
+
+    const response = await GET()
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      canSend: false,
+      checks: expect.arrayContaining([expect.objectContaining({ key: 'apiKey', status: 'error' })]),
+    })
+    expect(resendRouteState.constructed).not.toHaveBeenCalled()
+    expect(resendRouteState.listDomains).not.toHaveBeenCalled()
   })
 })

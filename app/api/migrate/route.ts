@@ -46,8 +46,11 @@ create table if not exists client_contacts (
   message_id       text,
   error_message    text,
   sent_at          timestamptz,
+  send_payload     text,
   created_at       timestamptz not null default now()
 );
+
+alter table client_contacts add column if not exists send_payload text;
 
 -- Migração segura: converte uuid → text se necessário
 do $$ begin

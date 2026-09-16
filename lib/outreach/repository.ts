@@ -140,7 +140,44 @@ export async function claimRosContact(db: SupabaseClient, campaignId: string, co
   const { data, error } = await db.from('client_contacts').update({ status: 'sending', error_message: null })
     .eq('id', contactId).eq('campaign_id', campaignId).in('status', [...sendableStatuses]).select('id')
   check(error)
-  return data?.length === 1
+  if (data?.length === 1) return true
+
+  // A retry can resume an uncertain post-send state only after the exact
+  // payload has been durably prepared. The Resend idempotency key then makes
+  // replay safe even if the first response was received before `sent` persisted.
+  const { data: existing, error: existingError } = await db.from('client_contacts')
+    .select('id, status, send_payload').eq('id', contactId).eq('campaign_id', campaignId).maybeSingle()
+  check(existingError)
+  return existing?.status === 'sending' && typeof existing.send_payload === 'string' && !!existing.send_payload
+}
+
+export async function getOrCreateRosSendPayload(
+  db: SupabaseClient,
+  campaignId: string,
+  contactId: string,
+  payload: string,
+): Promise<string> {
+  await requireRosCampaign(db, campaignId)
+  const { data: contact, error } = await db.from('client_contacts').select('id, status, send_payload')
+    .eq('id', contactId).eq('campaign_id', campaignId).maybeSingle()
+  check(error)
+  if (!contact) throw new OutreachError('Contato não encontrado.', 404)
+  if (contact.status !== 'sending') throw new OutreachError('O contato não está reservado para envio.', 409)
+  if (typeof contact.send_payload === 'string' && contact.send_payload) return contact.send_payload
+
+  const { data: stored, error: storeError } = await db.from('client_contacts').update({ send_payload: payload })
+    .eq('id', contactId).eq('campaign_id', campaignId).eq('status', 'sending')
+    .is('send_payload', null).select('send_payload')
+  check(storeError)
+  if (stored?.length === 1 && typeof stored[0].send_payload === 'string') return stored[0].send_payload
+
+  // A concurrent retry may have won the compare-and-set. Read its canonical
+  // serialized value instead of ever replacing it.
+  const { data: raced, error: racedError } = await db.from('client_contacts').select('send_payload')
+    .eq('id', contactId).eq('campaign_id', campaignId).eq('status', 'sending').maybeSingle()
+  check(racedError)
+  if (typeof raced?.send_payload === 'string' && raced.send_payload) return raced.send_payload
+  throw new OutreachError('Não foi possível persistir o payload idempotente.', 503)
 }
 
 export async function persistRosGeneratedEmail(

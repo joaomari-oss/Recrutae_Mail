@@ -27,3 +27,15 @@
 - A idempotência externa depende da retenção da chave pelo Resend 4.8; a persistência local permite retomar contatos `failed` com a mesma chave.
 - O deploy precisa configurar `RESEND_API_KEY`, `APP_BASE_URL` HTTPS, `UNSUBSCRIBE_SIGNING_SECRET` com 32+ bytes, `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`; sem service role, preflight e envio bloqueiam explicitamente.
 - O aviso de API CJS do Vite e a mensagem esperada do teste de falha transitória do webhook continuam preexistentes na suíte.
+
+## Correção após revisão — rodada 1
+
+- O payload completo do Resend agora é serializado antes do envio e persistido uma única vez em `client_contacts.send_payload` (`text`, para preservar a serialização original). Retries reutilizam esse valor em vez de recriar JWT, HTML ou headers.
+- A persistência usa compare-and-set (`send_payload is null`) e relê o vencedor em caso de corrida. Um contato `sending` só pode ser retomado quando já possui payload durável.
+- Falha após o Resend aceitar a mensagem, mas antes de persistir `sent`, mantém o contato em `sending`; o retry reapresenta o mesmo payload e a mesma chave `ros/{campaignId}/{contactId}`.
+- O link visível no HTML/texto aponta para `/unsubscribe?token=...` (confirmação humana), enquanto `List-Unsubscribe` permanece em `/api/unsubscribe?token=...` para POST one-click.
+- O preflight sem `RESEND_API_KEY` produz os checks/503 sem instanciar o SDK do Resend.
+- Destinatário inválido é recusado antes de supressão/reserva com 400. Falhas de supressão ou reserva viram JSON 503 e nunca alcançam o Resend.
+- Migração aditiva `send_payload text` foi replicada em `supabase-migration-ros.sql`, `supabase-schema.sql` e no SQL de `/api/migrate`.
+- RED: 11 falhas reproduziram os quatro achados. GREEN focado: 3 arquivos, 44 testes aprovados. Suíte: 11 arquivos, 85 testes aprovados. Build: compilação e 39 páginas concluídas com exit code 0.
+- Teste de retry avança o relógio em 24 horas, força falha de `markSent` após sucesso do Resend e confirma igualdade byte-for-byte do JSON enviado e da chave idempotente nas duas tentativas.
