@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { renderOutreachEmail, type OutreachEmailInput } from '@/lib/outreach/emailHtml'
+import { ROS_EMBLEM_DATA_URI } from '@/lib/ros/emblem'
 
 export type RosEmailPreviewProps = Omit<OutreachEmailInput, 'brand' | 'logoUrl' | 'emblemUrl'> & {
   logoUrl?: string
@@ -20,7 +21,7 @@ function resolvePreviewUrl(url: string): string {
 /** Visual preview backed by the exact HTML sent by the ROS delivery route. */
 export function RosEmailPreview({
   logoUrl = '/ros/recrutae-ros.png',
-  emblemUrl = '/ros/ros-emblema.png',
+  emblemUrl = ROS_EMBLEM_DATA_URI,
   title = 'Prévia do e-mail',
   ...input
 }: RosEmailPreviewProps) {
@@ -29,7 +30,8 @@ export function RosEmailPreview({
 
   useEffect(() => {
     setPreviewLogoUrl(resolvePreviewUrl(logoUrl))
-    setPreviewEmblemUrl(resolvePreviewUrl(emblemUrl))
+    // Um data: URI ja e absoluto; passa-lo pelo resolvedor o quebraria.
+    setPreviewEmblemUrl(emblemUrl.startsWith('data:') ? emblemUrl : resolvePreviewUrl(emblemUrl))
   }, [logoUrl, emblemUrl])
 
   const email = renderOutreachEmail({ ...input, brand: 'ros', logoUrl: previewLogoUrl, emblemUrl: previewEmblemUrl })

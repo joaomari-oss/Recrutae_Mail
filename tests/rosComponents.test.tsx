@@ -273,6 +273,19 @@ describe('portão de saída da tela de contatos', () => {
 
 // ── Task 11: composição da campanha ────────────────────────────────────
 
+// Os mocks abaixo descrevem `Response` só com `json()`. O código de produção lê
+// `text()` para conseguir explicar respostas que não são JSON — a borda da
+// Vercel devolve HTML. Este envelope faz o mock se comportar como a resposta
+// real, para o teste exercitar o mesmo caminho.
+function asResponse(partial: Record<string, unknown>): Response {
+  const response = partial as unknown as Response & { json: () => Promise<unknown> }
+  if (typeof (response as { text?: unknown }).text !== 'function') {
+    ;(response as unknown as { text: () => Promise<string> }).text = async () =>
+      JSON.stringify(await response.json())
+  }
+  return response
+}
+
 afterEach(() => { vi.unstubAllGlobals() })
 
 const pendingContact = rosContact({
@@ -286,15 +299,15 @@ function mockRosApi(saveResponse: unknown = { success: true }, saveStatus = 200)
     const url = String(input)
     calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined })
     if (url.includes('/api/ros/preflight')) {
-      return {
+      return asResponse({
         ok: true, status: 200,
         json: async () => ({
           canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br',
           senderOptions: ['contato@recrutae.com.br', 'comercial@recrutae.com.br'],
         }),
-      } as Response
+      } as Record<string, unknown>)
     }
-    return { ok: saveStatus < 400, status: saveStatus, json: async () => saveResponse } as Response
+    return asResponse({ ok: saveStatus < 400, status: saveStatus, json: async () => saveResponse } as Record<string, unknown>)
   }))
   return calls
 }
@@ -475,10 +488,10 @@ describe('página de revisão ROS', () => {
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body))
       generated.push(body.contact.id)
-      return {
+      return asResponse({
         ok: true, status: 200,
         json: async () => ({ subject: 'Conheça o ROS', body: `Olá, ${body.contact.firstName}!`, usedProvider: 'openai', didFallback: false }),
-      } as Response
+      } as Record<string, unknown>)
     }))
 
     const { useRosStore } = await seedCampaign([
@@ -511,8 +524,8 @@ describe('página de revisão ROS', () => {
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body))
       call += 1
-      if (call === 1) return { ok: false, status: 502, json: async () => ({ error: 'Provedor fora do ar.' }) } as Response
-      return { ok: true, status: 200, json: async () => ({ subject: 'S', body: `Olá, ${body.contact.firstName}!`, usedProvider: 'groq', didFallback: true }) } as Response
+      if (call === 1) return asResponse({ ok: false, status: 502, json: async () => ({ error: 'Provedor fora do ar.' }) } as Record<string, unknown>)
+      return asResponse({ ok: true, status: 200, json: async () => ({ subject: 'S', body: `Olá, ${body.contact.firstName}!`, usedProvider: 'groq', didFallback: true }) } as Record<string, unknown>)
     }))
 
     const { useRosStore } = await seedCampaign([
@@ -541,9 +554,9 @@ describe('corridas e retentativa na composição', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
       if (String(input).includes('/api/ros/preflight')) {
         await preflightReady
-        return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Response
+        return asResponse({ ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Record<string, unknown>)
       }
-      return { ok: true, status: 200, json: async () => ({ success: true }) } as Response
+      return asResponse({ ok: true, status: 200, json: async () => ({ success: true }) } as Record<string, unknown>)
     }))
 
     await renderCompose()
@@ -563,13 +576,13 @@ describe('corridas e retentativa na composição', () => {
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
       if (String(input).includes('/api/ros/preflight')) {
-        return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Response
+        return asResponse({ ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Record<string, unknown>)
       }
       const body = JSON.parse(String(init?.body))
       saved.push({ id: body.campaign.id })
       attempt += 1
-      if (attempt === 1) return { ok: false, status: 503, json: async () => ({ success: false, error: 'Banco indisponível.' }) } as Response
-      return { ok: true, status: 200, json: async () => ({ success: true }) } as Response
+      if (attempt === 1) return asResponse({ ok: false, status: 503, json: async () => ({ success: false, error: 'Banco indisponível.' }) } as Record<string, unknown>)
+      return asResponse({ ok: true, status: 200, json: async () => ({ success: true }) } as Record<string, unknown>)
     }))
 
     await renderCompose()
@@ -611,16 +624,16 @@ describe('tela de envio ROS', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/api/ros/preflight')) {
-        return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [{ key: 'domain', status: 'ok', message: 'Domínio verificado.' }], fromEmail: 'contato@recrutae.com.br' }) } as Response
+        return asResponse({ ok: true, status: 200, json: async () => ({ canSend: true, checks: [{ key: 'domain', status: 'ok', message: 'Domínio verificado.' }], fromEmail: 'contato@recrutae.com.br' }) } as Record<string, unknown>)
       }
-      if (url.includes('/api/ros/campaigns')) return { ok: true, status: 200, json: async () => ({ contacts: [] }) } as Response
-      if (url.includes('/api/ros/finalize-campaign')) { finalized = true; return { ok: true, status: 200, json: async () => ({ success: true }) } as Response }
+      if (url.includes('/api/ros/campaigns')) return asResponse({ ok: true, status: 200, json: async () => ({ contacts: [] }) } as Record<string, unknown>)
+      if (url.includes('/api/ros/finalize-campaign')) { finalized = true; return asResponse({ ok: true, status: 200, json: async () => ({ success: true }) } as Record<string, unknown>) }
       const body = JSON.parse(String(init?.body))
       sent.push(body.contactId)
       if (body.contactId === 'b') {
-        return { ok: false, status: 409, json: async () => ({ success: false, suppressed: true, error: 'suprimido' }) } as Response
+        return asResponse({ ok: false, status: 409, json: async () => ({ success: false, suppressed: true, error: 'suprimido' }) } as Record<string, unknown>)
       }
-      return { ok: true, status: 200, json: async () => ({ success: true, messageId: `msg-${body.contactId}` }) } as Response
+      return asResponse({ ok: true, status: 200, json: async () => ({ success: true, messageId: `msg-${body.contactId}` }) } as Record<string, unknown>)
     }))
 
     const store = await seedForSending([approved('a', 'a@example.com'), approved('b', 'b@example.com'), approved('c', 'c@example.com')])
@@ -644,8 +657,8 @@ describe('tela de envio ROS', () => {
   it('bloqueia o envio quando a verificação reprova', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
       const url = String(input)
-      if (url.includes('/api/ros/campaigns')) return { ok: true, status: 200, json: async () => ({ contacts: [] }) } as Response
-      return { ok: false, status: 503, json: async () => ({ canSend: false, fromEmail: 'contato@recrutae.com.br', checks: [{ key: 'unsubscribe', status: 'error', message: 'Segredo de descadastro ausente.' }] }) } as Response
+      if (url.includes('/api/ros/campaigns')) return asResponse({ ok: true, status: 200, json: async () => ({ contacts: [] }) } as Record<string, unknown>)
+      return asResponse({ ok: false, status: 503, json: async () => ({ canSend: false, fromEmail: 'contato@recrutae.com.br', checks: [{ key: 'unsubscribe', status: 'error', message: 'Segredo de descadastro ausente.' }] }) } as Record<string, unknown>)
     }))
 
     await seedForSending([approved('a', 'a@example.com')])
@@ -661,15 +674,15 @@ describe('tela de envio ROS', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
       const url = String(input)
       if (url.includes('/api/ros/preflight')) {
-        return { ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Response
+        return asResponse({ ok: true, status: 200, json: async () => ({ canSend: true, checks: [], fromEmail: 'contato@recrutae.com.br' }) } as Record<string, unknown>)
       }
-      return {
+      return asResponse({
         ok: true, status: 200,
         json: async () => ({ contacts: [
           { id: 'a', status: 'sent', sentAt: '2026-09-16T10:00:00Z', messageId: 'm1' },
           { id: 'b', status: 'approved' },
         ] }),
-      } as Response
+      } as Record<string, unknown>)
     }))
 
     const store = await seedForSending([
@@ -699,16 +712,16 @@ describe('histórico ROS', () => {
       const url = String(input)
       if (init?.method === 'DELETE') {
         deletedId = new URL(url, 'https://x').searchParams.get('campaignId')
-        return { ok: true, status: 200, json: async () => ({ success: true }) } as Response
+        return asResponse({ ok: true, status: 200, json: async () => ({ success: true }) } as Record<string, unknown>)
       }
-      return {
+      return asResponse({
         ok: true, status: 200,
         json: async () => ({ campaigns: [{
           id: 'ros-1', name: 'Divulgação setembro', status: 'completed', totalContacts: 3,
           sentCount: 2, failedCount: 1, createdAt: '2026-09-15T12:00:00Z',
           recruiterName: 'João', recruiterEmail: 'contato@recrutae.com.br',
         }] }),
-      } as Response
+      } as Record<string, unknown>)
     }))
 
     const { default: Page } = await import('@/app/ros/campaigns/page')

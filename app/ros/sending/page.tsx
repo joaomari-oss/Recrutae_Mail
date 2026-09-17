@@ -11,6 +11,7 @@ import {
   type RosServerContactStatus,
 } from '@/lib/ros/sendQueue'
 import { delay } from '@/lib/utils'
+import { networkErrorMessage, readRosApiBody, readRosApiResponse } from '@/lib/ros/apiResponse'
 import type { RosContact } from '@/lib/rosTypes'
 
 const SEND_INTERVAL_MS = 750
@@ -52,10 +53,14 @@ export default function RosSendingPage() {
   useEffect(() => {
     fetch('/api/ros/preflight')
       .then(async (response) => {
-        const result: Preflight = await response.json()
+        // O preflight responde 503 com JSON quando bloqueia: esse corpo é o
+        // resultado, não um erro de transporte. Só HTML/parse quebrado vira aviso.
+        const result = await readRosApiBody<Preflight>(response)
         if (!aborted.current) setPreflight(result)
       })
-      .catch(() => { if (!aborted.current) setPreflightError('Não foi possível consultar a verificação de envio.') })
+      .catch((cause) => {
+        if (!aborted.current) setPreflightError(networkErrorMessage(cause, 'Não foi possível consultar a verificação de envio.'))
+      })
   }, [])
 
   // Uma aba fechada no meio do lote deixa contatos em `sending`. Confrontar o
@@ -65,11 +70,12 @@ export default function RosSendingPage() {
     let active = true
     fetch(`/api/ros/campaigns?campaignId=${encodeURIComponent(activeCampaignId)}`)
       .then(async (response) => {
-        if (!response.ok) return
-        const result: { contacts?: RosServerContactStatus[] } = await response.json()
-        if (!active || !result.contacts) return
+        const parsed = await readRosApiResponse<{ contacts?: RosServerContactStatus[] }>(response)
+        if (!active || !parsed.ok) return
+        const serverContacts = parsed.data.contacts
+        if (!serverContacts) return
         const current = useRosStore.getState().contactsByCampaign[activeCampaignId] ?? []
-        reconcileSendingContacts(current, result.contacts).forEach(({ id, updates }) => {
+        reconcileSendingContacts(current, serverContacts).forEach(({ id, updates }) => {
           updateContact(activeCampaignId, id, updates)
         })
       })
@@ -108,20 +114,33 @@ export default function RosSendingPage() {
             recruiterWhatsapp: config.recruiterWhatsapp,
           }),
         })
-        const result = await response.json()
+        const parsed = await readRosApiResponse<{
+          success?: boolean
+          messageId?: string
+          suppressed?: boolean
+          error?: string
+        }>(response)
         if (aborted.current) return
 
-        if (result?.success) {
+        if (parsed.ok && parsed.data.success) {
           updateContact(activeCampaignId, contact.id, {
             status: 'sent', sentAt: new Date().toISOString(),
-            resendMessageId: result.messageId, errorMessage: undefined,
+            resendMessageId: parsed.data.messageId, errorMessage: undefined,
             sendAttempts: contact.sendAttempts + 1,
           })
         } else {
+          // A rota devolve 409 com JSON quando o endereço está suprimido, e o
+          // leitor já transforma HTML de borda em mensagem legível.
+          const suppressed = parsed.ok
+            ? parsed.data.suppressed === true
+            : /suprimid/i.test(parsed.error)
+          const message = parsed.ok
+            ? parsed.data.error ?? 'Falha no envio.'
+            : parsed.error
           // Uma falha não interrompe o lote; o contato fica reenviável.
           updateContact(activeCampaignId, contact.id, {
             status: 'failed',
-            errorMessage: result?.suppressed ? SUPPRESSED_MESSAGE : (result?.error ?? 'Falha no envio.'),
+            errorMessage: suppressed ? SUPPRESSED_MESSAGE : message,
             sendAttempts: contact.sendAttempts + 1,
           })
         }

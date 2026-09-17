@@ -155,9 +155,11 @@ describe('public unsubscribe endpoint', () => {
   })
 
   it('recusa token adulterado sem criar supressão', async () => {
+    // Trocar por uma letra fixa não adultera nada quando o token já termina
+    // nela — o teste passava a aceitar o token e falhava de vez em quando.
     const token = await createUnsubscribeToken({ email: 'ana@example.com', campaignId: 'camp-1' }, secret)
     const response = await unsubscribePost(new NextRequest(
-      `https://mail.recrutae.com.br/api/unsubscribe?token=${encodeURIComponent(token.slice(0, -1) + 'x')}`,
+      `https://mail.recrutae.com.br/api/unsubscribe?token=${encodeURIComponent(token.slice(0, -1) + (token.endsWith('x') ? 'y' : 'x'))}`,
       { method: 'POST' },
     ))
 

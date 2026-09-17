@@ -6,6 +6,7 @@ import { Download, MailCheck, MousePointerClick, RefreshCw, Eye, ShieldBan, XCir
 import { useRosStore } from '@/store/rosStore'
 import { exportToCSV } from '@/lib/utils'
 import { getRosSendQueue, SUPPRESSED_MESSAGE } from '@/lib/ros/sendQueue'
+import { readRosApiResponse } from '@/lib/ros/apiResponse'
 import type { RosContact } from '@/lib/rosTypes'
 
 type EventTotals = { totalDelivered: number; totalOpened: number; totalClicked: number }
@@ -25,9 +26,8 @@ export default function RosSentPage() {
     let active = true
     fetch(`/api/ros/events?campaignId=${encodeURIComponent(activeCampaignId)}`)
       .then(async (response) => {
-        if (!response.ok) return
-        const result: EventTotals = await response.json()
-        if (active) setEvents(result)
+        const parsed = await readRosApiResponse<EventTotals>(response)
+        if (active && parsed.ok) setEvents(parsed.data)
       })
       .catch(() => { /* os eventos chegam por webhook; a tela funciona sem eles */ })
     return () => { active = false }

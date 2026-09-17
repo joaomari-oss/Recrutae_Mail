@@ -25,7 +25,8 @@ describe('RosEmailPreview', () => {
     const { getByTitle } = render(<RosEmailPreview {...props} />)
 
     const preview = getByTitle('Prévia do e-mail') as HTMLIFrameElement
-    // A assinatura do modelo usa o emblema circular, resolvido após o mount.
-    expect(preview.srcdoc).toContain(`src="${new URL('/ros/ros-emblema.png', window.location.origin).href}"`)
+    // O emblema vai embutido: o iframe é de origem opaca e uma requisição de
+    // rede ali já quebrou a imagem em produção.
+    expect(preview.srcdoc).toContain('src="data:image/png;base64,')
   })
 })

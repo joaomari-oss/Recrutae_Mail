@@ -10,3 +10,8 @@ tsconfig.tsbuildinfo
 .vercel
 .env*.local
 .playwright-mcp/
+
+# Planilhas de candidatos e saidas de ferramentas: dados pessoais e artefatos
+# locais nao entram no repositorio.
+.xlsx/
+graphify-out/

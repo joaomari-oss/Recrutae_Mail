@@ -6,6 +6,7 @@ import { ChevronRight, Loader2, Plus, RefreshCw, Trash2, Users } from 'lucide-re
 import { toast } from 'sonner'
 import { useRosStore } from '@/store/rosStore'
 import { reconcileSendingContacts, type RosServerContactStatus } from '@/lib/ros/sendQueue'
+import { networkErrorMessage, readRosApiResponse } from '@/lib/ros/apiResponse'
 import type { RosContact } from '@/lib/rosTypes'
 
 type RosCampaignRow = {
@@ -43,11 +44,11 @@ export default function RosCampaignsPage() {
       // A rota filtra por campaign_kind = 'ros', então campanhas de Clientes
       // nunca aparecem aqui — nem o contrário.
       const response = await fetch('/api/ros/campaigns')
-      const result = await response.json()
-      if (!response.ok) throw new Error(result?.error ?? 'Não foi possível carregar as campanhas.')
-      setRows(result.campaigns ?? [])
+      const result = await readRosApiResponse<{ campaigns?: RosCampaignRow[] }>(response)
+      if (!result.ok) throw new Error(result.error)
+      setRows(result.data.campaigns ?? [])
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível carregar as campanhas.')
+      setError(networkErrorMessage(cause, 'Não foi possível carregar as campanhas.'))
       setRows(localCampaigns.map((campaign) => ({
         id: campaign.id, name: campaign.name, status: campaign.status,
         totalContacts: campaign.totalContacts, sentCount: campaign.sentCount,
@@ -73,9 +74,9 @@ export default function RosCampaignsPage() {
     let serverContacts: RosServerContactStatus[] | null = null
     try {
       const response = await fetch(`/api/ros/campaigns?campaignId=${encodeURIComponent(id)}`)
-      const result = await response.json()
-      if (!response.ok) throw new Error(result?.error ?? 'Não foi possível consultar a campanha.')
-      serverContacts = result.contacts ?? []
+      const result = await readRosApiResponse<{ contacts?: RosServerContactStatus[] }>(response)
+      if (!result.ok) throw new Error(result.error)
+      serverContacts = result.data.contacts ?? []
     } catch (cause) {
       toast.error(cause instanceof Error
         ? `${cause.message} Reabrir agora poderia reenviar e-mails.`
@@ -111,13 +112,15 @@ export default function RosCampaignsPage() {
     if (!window.confirm(`Excluir a campanha "${name}" e todos os seus contatos? Esta ação não pode ser desfeita.`)) return
     try {
       const response = await fetch(`/api/ros/campaigns?campaignId=${encodeURIComponent(id)}`, { method: 'DELETE' })
-      const result = await response.json()
-      if (!response.ok || !result?.success) throw new Error(result?.error ?? 'Não foi possível excluir.')
+      const result = await readRosApiResponse<{ success?: boolean }>(response)
+      if (!result.ok || !result.data.success) {
+        throw new Error(result.ok ? 'Não foi possível excluir.' : result.error)
+      }
       deleteLocalCampaign(id)
       setRows((current) => current.filter((row) => row.id !== id))
       toast.success('Campanha excluída.')
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+      toast.error(networkErrorMessage(cause, 'Não foi possível excluir.'))
     }
   }
 

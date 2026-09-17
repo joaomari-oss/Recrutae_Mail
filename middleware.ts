@@ -34,6 +34,35 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
 }
 
+/**
+ * A própria origem da requisição é sempre confiável: o navegador preenche
+ * `Origin` sozinho, então um site de terceiros não consegue forjar este valor.
+ *
+ * Sem isto, abrir o app por qualquer endereço que não seja exatamente o
+ * configurado — a URL do deploy na Vercel, uma prévia, um domínio próprio
+ * recém-apontado — fazia toda chamada de API responder "Origem não permitida",
+ * e a tela só dizia que não deu para salvar.
+ */
+function isSameOrigin(origin: string, req: NextRequest): boolean {
+  const host = req.headers.get('host')
+  try {
+    const parsed = new URL(origin)
+    if (host && parsed.host === host) return true
+    return parsed.origin === req.nextUrl.origin
+  } catch {
+    return false
+  }
+}
+
+function isConfiguredOrigin(origin: string): boolean {
+  return [
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.APP_BASE_URL,
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ].filter(Boolean).includes(origin)
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
@@ -62,17 +91,8 @@ export async function middleware(req: NextRequest) {
   // ── Origin check for API routes (when authenticated) ─────────────────────
   if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/')) {
     const origin = req.headers.get('origin')
-    if (origin) {
-      const allowed = [
-        process.env.NEXT_PUBLIC_APP_URL,
-        process.env.APP_BASE_URL,
-        'http://localhost:3000',
-        'http://localhost:3001',
-      ].filter(Boolean) as string[]
-
-      if (!allowed.includes(origin)) {
-        return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 })
-      }
+    if (origin && !isSameOrigin(origin, req) && !isConfiguredOrigin(origin)) {
+      return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403 })
     }
   }
 

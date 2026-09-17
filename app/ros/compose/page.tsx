@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useRosStore } from '@/store/rosStore'
 import { isCompleteRosContact, PENDING_CONTACTS_KEY } from '@/lib/ros/contacts'
 import { hasUnsafeLink } from '@/lib/outreach/richText'
+import { networkErrorMessage, readRosApiBody, readRosApiResponse } from '@/lib/ros/apiResponse'
 import { DEFAULT_ROS_SENDER, isRosSenderEmail, ROS_SENDER_DOMAIN } from '@/lib/ros/senders'
 import { renderEmailTemplate } from '@/lib/templateRender'
 import type { RosCampaign, RosCampaignConfig, RosContact } from '@/lib/rosTypes'
@@ -91,8 +92,9 @@ export default function RosComposePage() {
   useEffect(() => {
     let active = true
     fetch('/api/ros/preflight')
-      .then((response) => response.json())
-      .then((result: { fromEmail?: string; senderOptions?: string[] }) => {
+      // Mesmo bloqueando o envio, o preflight devolve remetente e opções.
+      .then((response) => readRosApiBody<{ fromEmail?: string; senderOptions?: string[] }>(response))
+      .then((result) => {
         if (!active) return
         if (result?.senderOptions?.length) setSenderOptions(result.senderOptions)
         if (!result?.fromEmail || senderTouched.current) return
@@ -171,9 +173,9 @@ export default function RosComposePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ campaign, config, contacts }),
       })
-      const result: { success?: boolean; error?: string } = await response.json()
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Não foi possível salvar a campanha.')
+      const result = await readRosApiResponse<{ success?: boolean }>(response)
+      if (!result.ok || !result.data.success) {
+        throw new Error(result.ok ? 'Não foi possível salvar a campanha.' : result.error)
       }
       // A sessão só é limpa depois da gravação durável — é ela que garante a
       // idempotência do envio; perder os contatos antes disso apagaria o lote.
@@ -183,7 +185,7 @@ export default function RosComposePage() {
       // A campanha local permanece: o POST pode ter gravado antes de a resposta
       // falhar, e repetir com o mesmo id é a única retentativa que o servidor
       // aceita — `saveRosCampaign` é idempotente por id de campanha.
-      const message = cause instanceof Error ? cause.message : 'Não foi possível salvar a campanha.'
+      const message = networkErrorMessage(cause, 'Não foi possível salvar a campanha.')
       toast.error(message)
       setSaveError(`${message} Os contatos continuam aqui — tente salvar novamente.`)
     } finally {

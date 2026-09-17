@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useRosStore } from '@/store/rosStore'
 import type { RosCampaignConfig, RosContact } from '@/lib/rosTypes'
 import { RosEmailEditor, type RosGenerationInfo } from '@/components/ros/RosEmailEditor'
+import { networkErrorMessage, readRosApiResponse } from '@/lib/ros/apiResponse'
 
 const STATUS_LABELS: Record<RosContact['status'], string> = {
   pending: 'Na fila', generating: 'Gerando', ready: 'Pronto', approved: 'Aprovado',
@@ -93,9 +94,11 @@ export default function RosReviewPage() {
           variationSeed: Math.floor(Math.random() * 1_000_000),
         }),
       })
-      const result = await response.json()
-      if (!response.ok || typeof result?.body !== 'string') {
-        throw new Error(result?.error || 'A geração não retornou um e-mail.')
+      const parsed = await readRosApiResponse<RosGenerationInfo & { subject?: string; body?: string }>(response)
+      if (!parsed.ok) throw new Error(parsed.error)
+      const result = parsed.data
+      if (typeof result.body !== 'string') {
+        throw new Error('A geração não retornou um e-mail.')
       }
       if (aborted.current) return
       setGenerationById((current) => ({ ...current, [contact.id]: result }))
@@ -111,7 +114,7 @@ export default function RosReviewPage() {
       if (aborted.current) return
       updateContact(activeCampaignId, contact.id, {
         status: 'failed',
-        errorMessage: cause instanceof Error ? cause.message : 'Falha ao gerar o e-mail.',
+        errorMessage: networkErrorMessage(cause, 'Falha ao gerar o e-mail.'),
       })
     }
   }, [activeCampaignId, config, updateContact])
