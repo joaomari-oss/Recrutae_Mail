@@ -60,6 +60,10 @@ export function RosEmailEditor({
 
   const generating = contact.status === 'generating'
   const canApprove = !generating && !!subject.trim() && !!body.trim()
+  // O texto de um contato enviado nao fica guardado nesta aba: a prevía ficava
+  // em branco, sem dizer por que. Enviado e terminal, entao vira leitura.
+  const alreadySent = contact.status === 'sent'
+  const emptyBody = !body.trim()
 
   const approve = () => {
     if (!canApprove) return
@@ -132,6 +136,7 @@ export function RosEmailEditor({
             <input
               id={`ros-assunto-${contact.id}`}
               value={subject}
+              readOnly={alreadySent}
               onChange={(event) => { dirty.current = true; setSubject(event.target.value) }}
               className="w-full rounded-lg border border-white/10 bg-brand-dark px-3 py-2 text-sm text-brand-white outline-none focus:border-brand-coral/60"
             />
@@ -145,29 +150,47 @@ export function RosEmailEditor({
             hint="Use **negrito** e [Clique aqui](https://…). O que estiver aqui é exatamente o que será enviado."
           />
 
-          <RosEmailPreview
-            title="Prévia com assinatura"
-            body={body}
-            recruiterName={config.recruiterName}
-            recruiterRole={config.recruiterRole}
-            recruiterLinkedin={config.recruiterLinkedin}
-            recruiterWhatsapp={config.recruiterWhatsapp}
-            recruiterEmail={config.replyTo || config.recruiterEmail}
-          />
+          {emptyBody ? (
+            <p className="rounded-xl border border-white/8 bg-brand-charcoal p-5 text-sm text-brand-muted">
+              {alreadySent
+                ? 'Este e-mail já foi enviado. O conteúdo não fica guardado nesta aba — o registro do envio está no histórico da campanha.'
+                : 'Ainda não há texto para pré-visualizar. Gere o e-mail ou escreva a mensagem acima.'}
+            </p>
+          ) : (
+            <RosEmailPreview
+              title="Prévia com assinatura"
+              body={body}
+              recruiterName={config.recruiterName}
+              recruiterRole={config.recruiterRole}
+              recruiterLinkedin={config.recruiterLinkedin}
+              recruiterWhatsapp={config.recruiterWhatsapp}
+              recruiterEmail={config.replyTo || config.recruiterEmail}
+            />
+          )}
         </>
       )}
 
       <footer className="flex flex-wrap items-center gap-2">
+        {alreadySent && (
+          <span className="inline-flex items-center gap-2 rounded-lg border border-brand-success/30 px-3 py-2 text-xs font-medium text-brand-success">
+            <Check className="h-3.5 w-3.5" />
+            Enviado
+          </span>
+        )}
+        {!alreadySent && (
         <button type="button" onClick={approve} disabled={!canApprove}
           className="btn-coral inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:transform-none">
           <Check className="h-4 w-4" />
           Aprovar
         </button>
+        )}
+        {!alreadySent && (
         <button type="button" onClick={() => onRegenerate(contact.id)} disabled={generating}
           className="inline-flex items-center gap-2 rounded-lg border border-white/12 px-4 py-2.5 text-sm font-medium text-brand-muted transition-colors hover:border-brand-coral/40 hover:text-brand-white disabled:opacity-40">
           <RefreshCw className="h-4 w-4" />
           Regenerar
         </button>
+        )}
         {onDiscard && (
           <button type="button" onClick={() => onDiscard(contact.id)}
             className="inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-brand-muted transition-colors hover:text-brand-error">

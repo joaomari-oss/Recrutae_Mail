@@ -897,3 +897,41 @@ describe('aprovação chega ao servidor', () => {
     expect(enviados[0]).toEqual(['a'])
   })
 })
+
+describe('prévia quando não há texto', () => {
+  it('explica que o contato enviado não guarda o conteúdo, em vez de e-mail em branco', async () => {
+    const { RosEmailEditor } = await import('@/components/ros/RosEmailEditor')
+    // É assim que o store persiste um contato enviado: sem assunto nem corpo.
+    const enviado = { ...readyContact, status: 'sent' as const, generatedSubject: '', generatedBody: '', editedSubject: '', editedBody: '' }
+
+    render(<RosEmailEditor contact={enviado} config={reviewConfig} onSave={vi.fn()}
+      onApprove={vi.fn()} onRegenerate={vi.fn()} onSkip={vi.fn()} />)
+
+    expect(screen.getByText(/já foi enviado/i)).toBeInTheDocument()
+    expect(screen.queryByTitle('Prévia com assinatura')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Regenerar' })).toBeNull()
+    expect(screen.getByText('Enviado')).toBeInTheDocument()
+  })
+
+  it('pede o texto quando o contato ainda não foi gerado', async () => {
+    const { RosEmailEditor } = await import('@/components/ros/RosEmailEditor')
+    const vazio = { ...readyContact, generatedSubject: '', generatedBody: '', editedSubject: '', editedBody: '' }
+
+    render(<RosEmailEditor contact={vazio} config={reviewConfig} onSave={vi.fn()}
+      onApprove={vi.fn()} onRegenerate={vi.fn()} onSkip={vi.fn()} />)
+
+    expect(screen.getByText(/ainda não há texto/i)).toBeInTheDocument()
+    expect(screen.queryByTitle('Prévia com assinatura')).toBeNull()
+  })
+
+  it('mostra a prévia normalmente quando há corpo', async () => {
+    const { RosEmailEditor } = await import('@/components/ros/RosEmailEditor')
+
+    render(<RosEmailEditor contact={readyContact} config={reviewConfig} onSave={vi.fn()}
+      onApprove={vi.fn()} onRegenerate={vi.fn()} onSkip={vi.fn()} />)
+
+    expect(screen.getByTitle('Prévia com assinatura')).toBeInTheDocument()
+    expect(screen.queryByText(/ainda não há texto/i)).toBeNull()
+  })
+})
