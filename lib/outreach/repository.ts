@@ -456,3 +456,47 @@ export function mapClientCampaignRow(
     failed_count: 0,
   }
 }
+
+/** Situações de onde um contato ainda pode ser aprovado para envio. */
+export const approvableStatuses = ['ready', 'failed', 'approved'] as const
+
+export type RosApprovalResult = {
+  approved: string[]
+  /** Ids que o banco recusou — normalmente já enviados, ou de outra campanha. */
+  rejected: string[]
+}
+
+/**
+ * Grava a aprovação do recrutador no banco.
+ *
+ * Sem isto a aprovação existia só na aba, e `claimRosContact` recusava todo
+ * envio porque o banco ainda dizia `ready` — a campanha inteira falhava com
+ * "Contato não disponível para envio". `sent` continua terminal: quem já
+ * recebeu não volta para a fila.
+ */
+export async function approveRosContacts(
+  db: SupabaseClient,
+  campaignId: string,
+  contactIds: string[],
+): Promise<RosApprovalResult> {
+  await requireRosCampaign(db, campaignId)
+  if (!contactIds.length) return { approved: [], rejected: [] }
+
+  const approved: string[] = []
+  // Em lotes: a lista de ids vai na URL do PostgREST e uma campanha grande
+  // estouraria o limite de tamanho da requisição.
+  for (let offset = 0; offset < contactIds.length; offset += 100) {
+    const slice = contactIds.slice(offset, offset + 100)
+    const { data, error } = await db.from('client_contacts')
+      .update({ status: 'approved', error_message: null })
+      .eq('campaign_id', campaignId)
+      .in('id', slice)
+      .in('status', [...approvableStatuses])
+      .select('id')
+    check(error)
+    for (const row of data ?? []) approved.push(row.id as string)
+  }
+
+  const accepted = new Set(approved)
+  return { approved, rejected: contactIds.filter((id) => !accepted.has(id)) }
+}

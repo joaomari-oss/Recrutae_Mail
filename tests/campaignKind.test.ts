@@ -298,3 +298,48 @@ describe('isolamento de Clientes', () => {
       .toMatchObject({ campaign_kind: 'clients', recruiter_name: '', segment: '', key_points: null })
   })
 })
+
+describe('aprovação gravada no banco', () => {
+  it('move ready/failed para approved dentro da campanha ROS', async () => {
+    const { db, requests } = database([{ id: 'camp-1' }, [{ id: 'person-1' }, { id: 'person-2' }]])
+    const { approveRosContacts } = await import('@/lib/outreach/repository')
+
+    const result = await approveRosContacts(db, 'camp-1', ['person-1', 'person-2'])
+
+    expect(result).toEqual({ approved: ['person-1', 'person-2'], rejected: [] })
+    expect(requests[0].url.searchParams.get('campaign_kind')).toBe('eq.ros')
+    expect(requests[1].method).toBe('PATCH')
+    expect(requests[1].body).toEqual({ status: 'approved', error_message: null })
+    expect(requests[1].url.searchParams.get('campaign_id')).toBe('eq.camp-1')
+    // `sent` fica de fora: quem já recebeu não volta para a fila.
+    expect(requests[1].url.searchParams.get('status')).toBe('in.(ready,failed,approved)')
+  })
+
+  it('devolve como recusado o contato que o banco não moveu', async () => {
+    const { db } = database([{ id: 'camp-1' }, [{ id: 'person-1' }]])
+    const { approveRosContacts } = await import('@/lib/outreach/repository')
+
+    const result = await approveRosContacts(db, 'camp-1', ['person-1', 'ja-enviado'])
+
+    expect(result.approved).toEqual(['person-1'])
+    expect(result.rejected).toEqual(['ja-enviado'])
+  })
+
+  it('a aprovação usa exatamente os status que a reserva de envio exige', async () => {
+    const { approvableStatuses } = await import('@/lib/outreach/repository')
+    // Sem esta interseção, aprovar não libera o envio: foi o que quebrou a
+    // primeira campanha real, com 54 contatos recusados pelo servidor.
+    for (const status of sendableStatuses) {
+      expect(approvableStatuses).toContain(status)
+    }
+    expect(approvableStatuses).toContain('ready')
+  })
+
+  it('não chama o banco quando a lista vem vazia', async () => {
+    const { db, requests } = database([{ id: 'camp-1' }])
+    const { approveRosContacts } = await import('@/lib/outreach/repository')
+
+    expect(await approveRosContacts(db, 'camp-1', [])).toEqual({ approved: [], rejected: [] })
+    expect(requests).toHaveLength(1)
+  })
+})

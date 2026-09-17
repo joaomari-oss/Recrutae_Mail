@@ -46,6 +46,7 @@ export default function RosReviewPage() {
   // estado: sem este contador o efeito não seria reavaliado e a fila pararia
   // no primeiro contato.
   const [queueTick, setQueueTick] = useState(0)
+  const [approving, setApproving] = useState(false)
 
   // Uma geração por vez, cancelável no unmount — o mesmo padrão de Clientes.
   const running = useRef(false)
@@ -143,27 +144,74 @@ export default function RosReviewPage() {
   const pendingDecision = contacts.filter((c) => c.status !== 'approved' && c.status !== 'sent')
   const canSend = contacts.length > 0 && pendingDecision.length === 0
 
-  const approve = (id: string) => {
-    if (!activeCampaignId) return
-    updateContact(activeCampaignId, id, { status: 'approved' })
-    const index = contacts.findIndex((contact) => contact.id === id)
-    const next = contacts.slice(index + 1).find((contact) => contact.status !== 'approved' && contact.status !== 'sent')
-    if (next) setSelectedId(next.id)
+  /**
+   * A aprovação precisa existir no banco, não só nesta aba.
+   *
+   * O servidor só libera o envio de um contato que esteja `approved` lá; quando
+   * a aprovação ficava só aqui, a campanha inteira falhava com "Contato não
+   * disponível para envio". Por isso o estado local só muda depois do confirme.
+   */
+  const persistApproval = useCallback(async (ids: string[]): Promise<string[]> => {
+    if (!activeCampaignId || !ids.length) return []
+    const response = await fetch('/api/ros/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaignId: activeCampaignId, contactIds: ids }),
+    })
+    const result = await readRosApiResponse<{ approved?: string[]; rejected?: string[] }>(response)
+    if (!result.ok) throw new Error(result.error)
+    return result.data.approved ?? []
+  }, [activeCampaignId])
+
+  const approve = async (id: string) => {
+    if (!activeCampaignId || approving) return
+    setApproving(true)
+    try {
+      const approved = await persistApproval([id])
+      if (!approved.includes(id)) {
+        toast.error('O servidor não aceitou a aprovação deste contato.')
+        return
+      }
+      updateContact(activeCampaignId, id, { status: 'approved', errorMessage: undefined })
+      const index = contacts.findIndex((contact) => contact.id === id)
+      const next = contacts.slice(index + 1).find((contact) => contact.status !== 'approved' && contact.status !== 'sent')
+      if (next) setSelectedId(next.id)
+    } catch (cause) {
+      toast.error(networkErrorMessage(cause, 'Não foi possível aprovar.'))
+    } finally {
+      setApproving(false)
+    }
   }
 
-  const approveAllReady = () => {
-    if (!activeCampaignId) return
-    let approved = 0
-    contacts.forEach((contact) => {
+  const approveAllReady = async () => {
+    if (!activeCampaignId || approving) return
+    // `failed` entra porque uma tentativa recusada pelo servidor volta assim, e
+    // o texto continua lá para ser reaprovado.
+    const elegiveis = contacts.filter((contact) => {
       const subject = contact.editedSubject || contact.generatedSubject
       const body = contact.editedBody || contact.generatedBody
-      // Um contato sem texto não pode ser aprovado em lote: ele viraria e-mail vazio.
-      if (contact.status === 'ready' && subject.trim() && body.trim()) {
-        updateContact(activeCampaignId, contact.id, { status: 'approved' })
-        approved += 1
-      }
+      // Um contato sem texto não pode ser aprovado em lote: viraria e-mail vazio.
+      return (contact.status === 'ready' || contact.status === 'failed')
+        && subject.trim() && body.trim()
     })
-    if (!approved) toast.error('Nenhum e-mail pronto para aprovar em lote.')
+
+    if (!elegiveis.length) {
+      toast.error('Nenhum e-mail pronto para aprovar em lote.')
+      return
+    }
+
+    setApproving(true)
+    try {
+      const approved = await persistApproval(elegiveis.map((contact) => contact.id))
+      approved.forEach((id) => updateContact(activeCampaignId, id, { status: 'approved', errorMessage: undefined }))
+      const recusados = elegiveis.length - approved.length
+      if (recusados > 0) toast.error(`${recusados} contato(s) o servidor não aceitou aprovar.`)
+      else toast.success(`${approved.length} e-mail(s) aprovado(s).`)
+    } catch (cause) {
+      toast.error(networkErrorMessage(cause, 'Não foi possível aprovar em lote.'))
+    } finally {
+      setApproving(false)
+    }
   }
 
   const discard = (id: string) => {
@@ -212,10 +260,10 @@ export default function RosReviewPage() {
               style={{ width: `${counts.total ? (counts.approved / counts.total) * 100 : 0}%` }} />
           </div>
 
-          <button type="button" onClick={approveAllReady}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/12 px-4 py-2.5 text-sm font-medium text-brand-muted transition-colors hover:border-brand-coral/40 hover:text-brand-white">
+          <button type="button" onClick={() => void approveAllReady()} disabled={approving}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/12 px-4 py-2.5 text-sm font-medium text-brand-muted transition-colors hover:border-brand-coral/40 hover:text-brand-white disabled:cursor-wait disabled:opacity-50">
             <CheckCheck className="h-4 w-4" />
-            Aprovar todos os prontos
+            {approving ? 'Aprovando…' : 'Aprovar todos os prontos'}
           </button>
 
           <ul className="max-h-[60vh] space-y-1.5 overflow-y-auto pr-1">
@@ -271,7 +319,7 @@ export default function RosReviewPage() {
               config={config}
               generation={generationById[selected.id]}
               onSave={(id, updates) => updateContact(activeCampaignId, id, updates)}
-              onApprove={approve}
+              onApprove={(id) => void approve(id)}
               onRegenerate={(id) => {
                 const contact = contacts.find((c) => c.id === id)
                 if (contact && !running.current) {

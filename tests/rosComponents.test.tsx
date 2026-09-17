@@ -485,8 +485,12 @@ describe('página de revisão ROS', () => {
   it('gera os pendentes um a um e libera o envio só com tudo aprovado', async () => {
     const user = (await import('@testing-library/user-event')).default.setup()
     const generated: string[] = []
-    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body))
+      // Aprovar passou a exigir confirmação do servidor.
+      if (String(input).includes('/api/ros/approve')) {
+        return asResponse({ ok: true, status: 200, json: async () => ({ success: true, approved: body.contactIds, rejected: [] }) })
+      }
       generated.push(body.contact.id)
       return asResponse({
         ok: true, status: 200,
@@ -798,5 +802,98 @@ describe('escolha de remetente e destino das respostas', () => {
 
     expect(screen.getByText(/e-mail válido para resposta/i)).toBeInTheDocument()
     expect(calls.some((call) => call.url.includes('save-campaign'))).toBe(false)
+  })
+})
+
+describe('aprovação chega ao servidor', () => {
+  async function seedReady(contacts: RosContact[]) {
+    const { useRosStore } = await import('@/store/rosStore')
+    useRosStore.setState({ campaigns: [], activeCampaignId: null, contactsByCampaign: {}, campaignConfigById: {} })
+    useRosStore.getState().createCampaign('Divulgação', contacts, reviewConfig)
+    return useRosStore
+  }
+
+  const pronto = (id: string) => rosContact({
+    id, email: `${id}@example.com`, fullName: id, firstName: id, status: 'ready',
+    generatedSubject: 'S', generatedBody: 'B', editedSubject: 'S', editedBody: 'B',
+  })
+
+  it('grava a aprovação antes de marcar na tela', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const chamadas: Array<{ url: string; body: unknown }> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input)
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      chamadas.push({ url, body })
+      if (url.includes('/api/ros/approve')) {
+        return asResponse({ ok: true, status: 200, json: async () => ({ success: true, approved: body.contactIds, rejected: [] }) })
+      }
+      return asResponse({ ok: true, status: 200, json: async () => ({}) })
+    }))
+
+    const store = await seedReady([pronto('a'), pronto('b')])
+    const { default: Page } = await import('@/app/ros/review/page')
+    render(<Page />)
+
+    await user.click(await screen.findByRole('button', { name: /aprovar todos os prontos/i }))
+
+    await vi.waitFor(() => {
+      const contatos = Object.values(store.getState().contactsByCampaign)[0]
+      expect(contatos.every((c) => c.status === 'approved')).toBe(true)
+    })
+
+    const aprovacao = chamadas.find((c) => c.url.includes('/api/ros/approve'))
+    expect(aprovacao).toBeTruthy()
+    expect((aprovacao!.body as { contactIds: string[] }).contactIds.sort()).toEqual(['a', 'b'])
+  })
+
+  it('não marca como aprovado quando o servidor recusa', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+      if (String(input).includes('/api/ros/approve')) {
+        return asResponse({ ok: false, status: 503, json: async () => ({ success: false, error: 'Banco indisponível.' }) })
+      }
+      return asResponse({ ok: true, status: 200, json: async () => ({}) })
+    }))
+
+    const store = await seedReady([pronto('a')])
+    const { default: Page } = await import('@/app/ros/review/page')
+    render(<Page />)
+
+    await user.click(await screen.findByRole('button', { name: /aprovar todos os prontos/i }))
+
+    // A campanha inteira já falhou no envio por confiar numa aprovação que só
+    // existia na aba; sem confirmação do servidor, o estado local não muda.
+    await vi.waitFor(() => {
+      const contatos = Object.values(store.getState().contactsByCampaign)[0]
+      expect(contatos[0].status).toBe('ready')
+    })
+    expect(screen.getByRole('button', { name: /enviar campanha/i })).toBeDisabled()
+  })
+
+  it('reaprova contatos que o servidor recusou antes', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const enviados: string[][] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      if (String(input).includes('/api/ros/approve')) {
+        enviados.push(body.contactIds)
+        return asResponse({ ok: true, status: 200, json: async () => ({ success: true, approved: body.contactIds, rejected: [] }) })
+      }
+      return asResponse({ ok: true, status: 200, json: async () => ({}) })
+    }))
+
+    // É o estado em que a campanha real ficou: texto pronto, marcado failed.
+    const store = await seedReady([{ ...pronto('a'), status: 'failed' as const, errorMessage: 'Contato não disponível para envio.' }])
+    const { default: Page } = await import('@/app/ros/review/page')
+    render(<Page />)
+
+    await user.click(await screen.findByRole('button', { name: /aprovar todos os prontos/i }))
+
+    await vi.waitFor(() => {
+      const contatos = Object.values(store.getState().contactsByCampaign)[0]
+      expect(contatos[0].status).toBe('approved')
+    })
+    expect(enviados[0]).toEqual(['a'])
   })
 })

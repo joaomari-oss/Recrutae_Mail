@@ -64,6 +64,17 @@ vi.mock('@/lib/supabaseAdmin', () => ({ supabaseAdmin: database }))
 const { POST: unsubscribePost } = await import('@/app/api/unsubscribe/route')
 const { POST: webhookPost } = await import('@/app/api/webhooks/resend/route')
 
+/** Adultera a assinatura de verdade, no meio, onde todo bit conta. */
+function tamperSignature(token: string): string {
+  const parts = token.split('.')
+  const signature = parts[2]
+  const index = Math.floor(signature.length / 2)
+  const current = signature[index]
+  const replacement = current === 'A' ? 'B' : 'A'
+  parts[2] = signature.slice(0, index) + replacement + signature.slice(index + 1)
+  return parts.join('.')
+}
+
 describe('unsubscribe token', () => {
   const secret = '12345678901234567890123456789012'
 
@@ -155,11 +166,12 @@ describe('public unsubscribe endpoint', () => {
   })
 
   it('recusa token adulterado sem criar supressão', async () => {
-    // Trocar por uma letra fixa não adultera nada quando o token já termina
-    // nela — o teste passava a aceitar o token e falhava de vez em quando.
+    // Mexer no último caractere não bastava: ele carrega só 2 bits úteis da
+    // assinatura, então trocá-lo pode decodificar nos mesmos bytes e o token
+    // continuar válido. O teste falhava de vez em quando por isso.
     const token = await createUnsubscribeToken({ email: 'ana@example.com', campaignId: 'camp-1' }, secret)
     const response = await unsubscribePost(new NextRequest(
-      `https://mail.recrutae.com.br/api/unsubscribe?token=${encodeURIComponent(token.slice(0, -1) + (token.endsWith('x') ? 'y' : 'x'))}`,
+      `https://mail.recrutae.com.br/api/unsubscribe?token=${encodeURIComponent(tamperSignature(token))}`,
       { method: 'POST' },
     ))
 
